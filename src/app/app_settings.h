@@ -53,11 +53,11 @@ typedef struct app_settings_t {
      * for tighter vsync without adding latency when the stream runs late.
      */
     bool video_tight_sync;
+    /** webOS: presentation offset (ms) when tight sync is on; typically -12, clamped -48..0 in decoder. */
+    int video_presentation_offset_ms;
     bool hevc;
-    bool av1;
-    /** Min ms between AV1 DR_NEED_IDR requests (decoder keyframe); avoids control-channel storms. */
-    int av1_idr_request_min_interval_ms;
-    bool yuv422;
+    /** If true, SDP omits HEVC RFI + slices (direct submit only); may help some TVs. */
+    bool video_simple_sdp;
     bool show_stats_on_start;
     bool show_stats_compact;
     int stick_deadzone;

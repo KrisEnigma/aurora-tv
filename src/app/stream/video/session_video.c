@@ -25,14 +25,12 @@
 // 2MB decode size should be fairly enough for everything
 #define DECODER_BUFFER_SIZE (2048 * 1024)
 
-/** Default min interval between AV1 IDR requests if settings are out of range. */
-#define VDEC_IDR_REQUEST_MIN_INTERVAL_DEFAULT_MS 1000
-
 /** Slices hint for pipeline decode while later slices still arrive (high bitrate / 120 Hz). */
 #define VDEC_STREAM_SLICES_PER_FRAME 4
 
-/** webOS tight sync: small negative PTS shift (ms) toward panel vsync. */
-#define TIGHT_SYNC_PRESENTATION_OFFSET_MS (-12)
+/** Clamp presentation offset (ms) when tight sync is on. */
+#define PRESENTATION_OFFSET_MS_MIN (-48)
+#define PRESENTATION_OFFSET_MS_MAX 0
 
 static int vdec_stream_target_fps = 60;
 
@@ -40,9 +38,6 @@ static session_t *session = NULL;
 static SS4S_Player *player = NULL;
 static unsigned char *buffer = NULL;
 static int lastFrameNumber;
-static unsigned long last_idr_request_ms;
-static unsigned vdec_idr_min_interval_ms = VDEC_IDR_REQUEST_MIN_INTERVAL_DEFAULT_MS;
-static bool vdec_throttle_idr_requests;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
@@ -68,18 +63,17 @@ DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks = {
 
 void session_video_prepare_stream(void) {
     int caps = CAPABILITY_DIRECT_SUBMIT;
+    if (app_configuration != NULL && app_configuration->video_simple_sdp) {
+        ss4s_dec_callbacks.capabilities = caps;
+        commons_log_info("Session", "Video SDP caps: simple (direct submit only)");
+        return;
+    }
     const bool hevc = app_configuration != NULL && app_configuration->hevc;
-    const bool av1 = app_configuration != NULL && app_configuration->av1;
     if (hevc) {
         caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC;
-    }
-    if (av1) {
-        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
-    }
-    if (hevc || av1) {
         caps |= CAPABILITY_SLICES_PER_FRAME(VDEC_STREAM_SLICES_PER_FRAME);
-        commons_log_info("Session", "Video SDP caps: HEVC RFI=%d, AV1 RFI=%d, %u slices/frame",
-                         hevc ? 1 : 0, av1 ? 1 : 0, (unsigned) VDEC_STREAM_SLICES_PER_FRAME);
+        commons_log_info("Session", "Video SDP caps: HEVC RFI + %u slices/frame",
+                         (unsigned) VDEC_STREAM_SLICES_PER_FRAME);
     }
     ss4s_dec_callbacks.capabilities = caps;
 }
@@ -92,10 +86,6 @@ static const char *video_format_name(int videoFormat) {
             return "H265";
         case VIDEO_FORMAT_H265_MAIN10:
             return "H265 10bit";
-        case VIDEO_FORMAT_AV1_MAIN8:
-            return "AV1 8bit";
-        case VIDEO_FORMAT_AV1_MAIN10:
-            return "AV1 10bit";
         default:
             return "Unknown";
     }
@@ -111,18 +101,6 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     vdec_stream_format = videoFormat;
     vdec_stream_info.format = video_format_name(videoFormat);
     lastFrameNumber = 0;
-    last_idr_request_ms = 0;
-    vdec_throttle_idr_requests = (videoFormat & VIDEO_FORMAT_MASK_AV1) != 0;
-    if (app_configuration != NULL) {
-        int ms = app_configuration->av1_idr_request_min_interval_ms;
-        if (ms >= 250 && ms <= 10000) {
-            vdec_idr_min_interval_ms = (unsigned) ms;
-        } else {
-            vdec_idr_min_interval_ms = VDEC_IDR_REQUEST_MIN_INTERVAL_DEFAULT_MS;
-        }
-    } else {
-        vdec_idr_min_interval_ms = VDEC_IDR_REQUEST_MIN_INTERVAL_DEFAULT_MS;
-    }
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
 
@@ -135,7 +113,13 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
 #if TARGET_WEBOS
     if (session->app->settings.video_tight_sync) {
         info.tightFramePacing = true;
-        info.presentationOffsetMs = TIGHT_SYNC_PRESENTATION_OFFSET_MS;
+        int off = session->app->settings.video_presentation_offset_ms;
+        if (off > PRESENTATION_OFFSET_MS_MAX) {
+            off = PRESENTATION_OFFSET_MS_MAX;
+        } else if (off < PRESENTATION_OFFSET_MS_MIN) {
+            off = PRESENTATION_OFFSET_MS_MIN;
+        }
+        info.presentationOffsetMs = off;
     }
 #endif
     switch (videoFormat) {
@@ -145,10 +129,6 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
         case VIDEO_FORMAT_H265:
         case VIDEO_FORMAT_H265_MAIN10:
             info.codec = SS4S_VIDEO_H265;
-            break;
-        case VIDEO_FORMAT_AV1_MAIN8:
-        case VIDEO_FORMAT_AV1_MAIN10:
-            info.codec = SS4S_VIDEO_AV1;
             break;
         default: {
             commons_log_error("Session", "Unsupported codec %s", vdec_stream_info.format);
@@ -238,13 +218,6 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
         vdec_temp_stats.submittedFrames++;
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
-        if (vdec_throttle_idr_requests) {
-            unsigned long now = SDL_GetTicks();
-            if (now - last_idr_request_ms < vdec_idr_min_interval_ms) {
-                return DR_OK;
-            }
-            last_idr_request_ms = now;
-        }
         return DR_NEED_IDR;
     } else {
         commons_log_error("Session", "Video feed error %d", result);

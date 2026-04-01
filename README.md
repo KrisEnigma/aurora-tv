@@ -18,6 +18,7 @@ It was created to push the limits of LG C1 (and similar OLEDs) in 4K 120fps HDR 
 - **Max bitrate: 300 Mbps** (use sparingly; see warning below)
 - **HDR10 (PQ)** over HEVC Main10 when the host sends HDR (HLG, HDR10+, and Dolby Vision are not used)
 - **Tight display sync** (webOS) — optional in **Settings → Video**; see *Fork adjustments*
+- **H.264 / HEVC only** — this fork does not negotiate **AV1** with the host (lower latency and simpler pipeline on typical webOS decoders).
 
 ## ⚠️ Bitrate warning
 
@@ -41,17 +42,18 @@ The bitrate limit is set to **300 Mbps**. High bitrates stress the TV’s WiFi a
 
 ## Performance notes
 
-- **HEVC / AV1 options** – With **Use H265** or **Use AV1** enabled in **Settings → Video**, the client negotiates **reference-frame invalidation (RFI)** and a **multi-slice** hint so the host can pipeline frames at high bitrate and frame rate (e.g. 4K 120). Disable a codec if your host or network misbehaves with these extensions.
-- **Stats overlay** – When the performance overlay is **hidden**, the app uses a **2 s** measurement window (instead of 1 s) and skips **RTT** queries and decoder-latency reads until you show stats again, to reduce overhead on the hot path.
-- **AV1 keyframe throttle** – Under **Settings → Video → Advanced** (when AV1 is supported), you can set the **minimum interval (ms)** between keyframe requests after `SS4S_VIDEO_FEED_REQUEST_KEYFRAME`. INI: `[video] av1_idr_request_min_interval_ms=` (250–10000; default 1000). Reconnect the stream after changing.
-- **Zero-copy decode** – Frames are still **assembled into a staging buffer** before `SS4S_PlayerVideoFeed`. True zero-copy would need **SS4S / platform API** support for scatter-gather or imported buffers (future work).
+- **HEVC negotiation** — With **Use H265** enabled, the client can negotiate **reference-frame invalidation (RFI)** and a **multi-slice** hint (unless **Compatible streaming (simple SDP)** is on). Use simple SDP if some TVs or host encoder presets misbehave.
+- **Compatible streaming** — **Settings → Video → Advanced**: skips HEVC RFI + slices (direct submit only). INI: `[video] video_simple_sdp=`. Reconnect after changing.
+- **Tight sync offset** (webOS) — **Presentation offset (ms)** (default **-12**, range **-48..0**) adjusts how early Starfish presents frames when tight display sync is enabled. INI: `[video] presentation_offset_ms=`.
+- **Stats overlay** — When the performance overlay is **hidden**, the app uses a **2 s** measurement window (instead of 1 s) and skips **RTT** queries and decoder-latency reads until you show stats again, to reduce overhead on the hot path.
+- **Zero-copy decode** — Frames are still **assembled into a staging buffer** before `SS4S_PlayerVideoFeed`. True zero-copy would need **SS4S / platform API** support for scatter-gather or imported buffers (future work).
 
 ## Fork adjustments
 
 - **300 Mbps** – Raised bitrate limit; use responsibly
 - **Video pipeline** – Frame pacing and decoding path aligned with upstream [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv) (same ss4s submodule baseline)
 - **HDR** – Starfish is signaled as **HDR10** only (no HLG / HDR10+ / Dolby Vision paths)
-- **Tight display sync** (webOS, optional) — Starfish video PTS follows the **nominal stream frame rate** and **catches up to wall-clock time** when the stream runs late, so you get steadier vsync without adding latency when you are already behind. A small negative presentation offset (~12 ms) nudges output slightly earlier toward the panel. Toggle under **Settings → Video → Smooth playback (TV)**; restart streaming after changing. INI: `[video] tight_display_sync=`.
+- **Tight display sync** (webOS, optional) — Starfish video PTS follows the **nominal stream frame rate** and **catches up to wall-clock time** when the stream runs late, so you get steadier vsync without adding latency when you are already behind. A configurable negative presentation offset nudges output earlier toward the panel. Toggle under **Settings → Video → Smooth playback (TV)**; restart streaming after changing. INI: `[video] tight_display_sync=`.
 
 ## Documentation
 

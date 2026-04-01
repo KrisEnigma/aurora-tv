@@ -104,31 +104,14 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                               SS4S_ModuleInfoGetName(app->ss4s.selection.video_module));
     }
 
-    lv_obj_t *av1_checkbox = pref_checkbox(view, locstr("Use AV1 when possible"), &app_configuration->av1, false);
-    lv_obj_t *av1_hint = pref_desc_label(view, NULL, false);
-    if (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1) {
-        lv_obj_clear_state(av1_checkbox, LV_STATE_DISABLED);
-        lv_label_set_text(av1_hint,
-                          locstr("AV1 can improve quality at lower bitrates (Sunshine + capable host GPU). HDR uses "
-                                 "Main10 when the decoder supports it."));
-    } else {
-        lv_obj_add_state(av1_checkbox, LV_STATE_DISABLED);
-        lv_label_set_text_fmt(av1_hint, locstr("%s decoder doesn't support AV1 codec."),
-                              SS4S_ModuleInfoGetName(app->ss4s.selection.video_module));
-    }
-
-    if (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1) {
-        pref_header(view, locstr("Advanced"));
-        pref_title_label(view, locstr("AV1 keyframe request interval (ms)"));
-        lv_obj_t *idr_slider =
-                pref_slider(view, &app_configuration->av1_idr_request_min_interval_ms, 250, 10000, 50);
-        pref_desc_label(view,
-                        locstr("Minimum time between decoder requests for a new keyframe from the host. Lower may "
-                               "recover faster after decode errors; higher reduces control-channel traffic. Reconnect "
-                               "stream to apply."),
-                        false);
-        lv_obj_add_event_cb(idr_slider, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
-    }
+    pref_header(view, locstr("Advanced"));
+    lv_obj_t *simple_sdp_cb =
+            pref_checkbox(view, locstr("Compatible streaming (simple SDP)"), &app_configuration->video_simple_sdp, false);
+    pref_desc_label(view,
+                    locstr("Skips HEVC reference-frame invalidation and multi-slice hints. May help on some TVs "
+                           "when the host preset is aggressive. Reconnect stream after changing."),
+                    false);
+    lv_obj_add_event_cb(simple_sdp_cb, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
 
     lv_obj_t *hdr_checkbox = pref_checkbox(view, locstr("HDR"), &app_configuration->hdr, false);
     lv_obj_t *hdr_hint = pref_desc_label(view, NULL, false);
@@ -143,7 +126,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     lv_obj_add_event_cb(vdec_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hevc_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, controller);
-    lv_obj_add_event_cb(av1_checkbox, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hdr_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hdr_more, hdr_more_click_cb, LV_EVENT_CLICKED, NULL);
 
@@ -157,6 +139,14 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                             "Restart stream after changing."),
                      false);
     lv_obj_add_event_cb(tight_cb, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
+    pref_title_label(view, locstr("Presentation offset (ms)"));
+    lv_obj_t *offset_slider =
+            pref_slider(view, &app_configuration->video_presentation_offset_ms, -48, 0, 3);
+    pref_desc_label(view,
+                    locstr("Negative ms nudges video slightly earlier toward panel vsync when tight sync is on. "
+                           "Default -12. Reconnect stream after changing."),
+                    false);
+    lv_obj_add_event_cb(offset_slider, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
 #endif
 
     return view;

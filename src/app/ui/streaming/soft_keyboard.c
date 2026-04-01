@@ -166,10 +166,28 @@ static void send_modifier(soft_kbd_t *kbd, short vk, bool down) {
 
 static void release_toggles(soft_kbd_t *kbd) {
     bool was_shift = kbd->toggle_shift;
-    if (kbd->toggle_shift) { kbd->toggle_shift = false; send_modifier(kbd, VK_LSHIFT, false); }
-    if (kbd->toggle_ctrl)  { kbd->toggle_ctrl = false;  send_modifier(kbd, VK_LCONTROL, false); }
-    if (kbd->toggle_alt)   { kbd->toggle_alt = false;   send_modifier(kbd, VK_LMENU, false); }
-    if (kbd->toggle_win)   { kbd->toggle_win = false;   send_modifier(kbd, VK_LWIN, false); }
+    if (kbd->toggle_shift) {
+        kbd->toggle_shift = false;
+        /* Row 5 uses VK_SHIFT for both keys; release all shift scancodes so host never stays stuck. */
+        send_modifier(kbd, VK_SHIFT, false);
+        send_modifier(kbd, VK_LSHIFT, false);
+        send_modifier(kbd, VK_RSHIFT, false);
+    }
+    if (kbd->toggle_ctrl) {
+        kbd->toggle_ctrl = false;
+        send_modifier(kbd, VK_LCONTROL, false);
+        send_modifier(kbd, VK_RCONTROL, false);
+    }
+    if (kbd->toggle_alt) {
+        kbd->toggle_alt = false;
+        send_modifier(kbd, VK_LMENU, false);
+        send_modifier(kbd, VK_RMENU, false);
+    }
+    if (kbd->toggle_win && app_configuration->syskey_capture) {
+        kbd->toggle_win = false;
+        send_modifier(kbd, VK_LWIN, false);
+        send_modifier(kbd, VK_RWIN, false);
+    }
     if (was_shift) {
         kbd_refresh_case(kbd);  /* switch back to lowercase map if Shift was active */
     } else {

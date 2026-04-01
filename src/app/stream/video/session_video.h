@@ -8,6 +8,6 @@ extern struct AUDIO_INFO audio_stream_info;
 
 extern DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks;
 
-/** Call before LiStartConnection. Sets decoder capabilities from settings (HEVC/AV1 RFI + slices when enabled). */
+/** Call before LiStartConnection. Sets decoder capabilities from settings (HEVC RFI + slices unless simple SDP). */
 void session_video_prepare_stream(void);
 

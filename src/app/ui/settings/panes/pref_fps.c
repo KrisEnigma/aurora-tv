@@ -187,7 +187,15 @@ static void cus_fps_dialog_cb(lv_event_t *e) {
         fps = max_fps;
     }
     int x100 = (int) (fps * 100.0 + 0.5);
+    /* Round to nearest (NOT floor) so the integer matches what vibeshine derives from
+     * clientRefreshRateX100 via round((x100)/100). With floor, 119.88 -> stream.fps=119
+     * but vibeshine computes 120 from 11988 and rejects clientRefreshRateX100 with:
+     *   "clientRefreshRateX100 (11988 = 120fps) disagrees with maxFPS (119); ignoring".
+     * Round-to-nearest keeps both sides agreeing so the precise rate is honored. */
     int rounded_fps = (int) (fps + 0.5);
+    if (rounded_fps < min_fps) {
+        rounded_fps = min_fps;
+    }
     *ctx->value_ref = rounded_fps;
     if (ctx->refresh_rate_x100_ref != NULL) {
         *ctx->refresh_rate_x100_ref = x100;

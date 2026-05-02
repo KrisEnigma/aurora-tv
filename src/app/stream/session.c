@@ -284,6 +284,11 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;
 
     if (app_config->client_refresh_rate_x100 > 0) {
+        /* Round to nearest (NOT floor) so stream.fps matches what vibeshine/Sunshine derive
+         * from clientRefreshRateX100 via round(x100/100). Mismatch causes vibeshine to log
+         * "clientRefreshRateX100 (11988 = 120fps) disagrees with maxFPS (119); ignoring" and
+         * fall back to the integer rate, defeating fractional-rate transmission. With round,
+         * 11988 -> stream.fps=120 and clientRefreshRateX100=11988 agree, so 119.88 is honored. */
         config->stream.fps = (app_config->client_refresh_rate_x100 + 50) / 100;
     }
     if (config->stream.bitrate < 0) {

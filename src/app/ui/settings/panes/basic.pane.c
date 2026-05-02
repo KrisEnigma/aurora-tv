@@ -20,7 +20,6 @@ typedef struct {
     lv_obj_t *bitrate_label;
     lv_obj_t *bitrate_slider;
     lv_obj_t *bitrate_warning;
-    lv_obj_t *refresh_rate_ta;
 
     pref_dropdown_string_entry_t *lang_entries;
     int lang_entries_len;
@@ -45,16 +44,6 @@ static void init_locale_entries(basic_pane_t *pane);
 static void pref_mark_restart_cb(lv_event_t *e);
 
 static void update_bitrate_hint(basic_pane_t *pane);
-
-static void on_refresh_rate_committed(lv_event_t *e);
-
-static void on_refresh_rate_minus(lv_event_t *e);
-
-static void on_refresh_rate_plus(lv_event_t *e);
-
-static void refresh_rate_sync_ta(lv_obj_t *ta);
-
-static void sync_custom_fps_to_refresh_rate(basic_pane_t *pane);
 
 const lv_fragment_class_t settings_pane_basic_cls = {
     .constructor_cb = pane_ctor,
@@ -123,41 +112,9 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_set_flex_grow(fps_dropdown, 1);
     lv_obj_add_event_cb(fps_dropdown, on_res_fps_updated, LV_EVENT_VALUE_CHANGED, self);
 
-    pref_title_label(view, locstr("Client refresh rate (Hz)"));
-    lv_obj_t *rr_row = lv_obj_create(view);
-    lv_obj_remove_style_all(rr_row);
-    lv_obj_set_width(rr_row, LV_PCT(100));
-    lv_obj_set_style_pad_column(rr_row, lv_disp_dpx(lv_obj_get_disp(rr_row), 8), 0);
-    lv_obj_set_flex_flow(rr_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(rr_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t *rr_ta = lv_textarea_create(rr_row);
-    pane->refresh_rate_ta = rr_ta;
-    lv_textarea_set_one_line(rr_ta, true);
-    lv_textarea_set_accepted_chars(rr_ta, "0123456789.");
-    lv_textarea_set_max_length(rr_ta, 10);
-    lv_textarea_set_placeholder_text(rr_ta, locstr("Auto"));
-    lv_obj_set_flex_grow(rr_ta, 1);
-    refresh_rate_sync_ta(rr_ta);
-    lv_obj_add_event_cb(rr_ta, on_refresh_rate_committed, LV_EVENT_DEFOCUSED, pane);
-
-    lv_obj_t *btn_m = lv_btn_create(rr_row);
-    lv_obj_set_height(btn_m, LV_SIZE_CONTENT);
-    lv_obj_t *lbl_m = lv_label_create(btn_m);
-    lv_label_set_text(lbl_m, "-");
-    lv_obj_center(lbl_m);
-    lv_obj_add_event_cb(btn_m, on_refresh_rate_minus, LV_EVENT_CLICKED, pane);
-
-    lv_obj_t *btn_p = lv_btn_create(rr_row);
-    lv_obj_set_height(btn_p, LV_SIZE_CONTENT);
-    lv_obj_t *lbl_p = lv_label_create(btn_p);
-    lv_label_set_text(lbl_p, "+");
-    lv_obj_center(lbl_p);
-    lv_obj_add_event_cb(btn_p, on_refresh_rate_plus, LV_EVENT_CLICKED, pane);
-
     pref_desc_label(view,
-                    locstr("Optional. Leave empty for default. Sent to the host as client refresh x100 for frame "
-                           "pacing (e.g. 119.94 for VRR game mode). Reconnect stream after changing."),
+                    locstr("Tip: choose Custom FPS to enter a fractional refresh rate (e.g. 119.94 for VRR game "
+                           "mode). The exact value is sent to the host for frame pacing."),
                     false);
 
     pane->res_warning = lv_label_create(view);
@@ -169,7 +126,9 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     pane->bitrate_label = pref_title_label(view, locstr("Video bitrate"));
 
-    unsigned int max = 300000;
+    /* User-facing slider cap. Set to 400 Mbps for high-end Sunshine setups; the SMP driver
+     * advertises a matching maxBitrate so session.c will not silently clamp this value. */
+    unsigned int max = 400000;
     lv_obj_t *bitrate_slider = pref_slider(view, &app_configuration->stream.bitrate, 5000, (int) max, BITRATE_STEP);
     lv_obj_set_width(bitrate_slider, LV_PCT(100));
     lv_obj_add_event_cb(bitrate_slider, on_bitrate_changed, LV_EVENT_VALUE_CHANGED, self);
@@ -228,13 +187,11 @@ static void on_bitrate_changed(lv_event_t *e) {
 static void on_res_fps_updated(lv_event_t *e) {
     basic_pane_t *pane = lv_event_get_user_data(e);
     pane->parent->needs_stream_reconnect = true;
-    sync_custom_fps_to_refresh_rate(pane);
-    int bitrate = settings_optimal_bitrate(&pane->parent->app->ss4s.video_cap, app_configuration->stream.width,
-                                           app_configuration->stream.height, app_configuration->stream.fps);
-    if (bitrate > app_configuration->stream.bitrate) {
-        lv_slider_set_value(pane->bitrate_slider, bitrate / BITRATE_STEP, LV_ANIM_OFF);
-        app_configuration->stream.bitrate = lv_slider_get_value(pane->bitrate_slider) * BITRATE_STEP;
-    }
+    /* Do NOT auto-bump bitrate to match the new resolution/FPS. The user is the sole owner
+     * of the bitrate slider; previously this handler called settings_optimal_bitrate() and
+     * forced the slider up to that value (e.g. 300 Mbps), silently overwriting whatever the
+     * user had chosen. That behavior was confusing and effectively prevented running high
+     * resolutions at moderate bitrates. */
     if (app_configuration->stream.width > 1920 && app_configuration->stream.height > 1080 &&
         app_configuration->stream.fps > 60) {
         lv_obj_clear_flag(pane->res_warning, LV_OBJ_FLAG_HIDDEN);
@@ -266,104 +223,6 @@ static void update_bitrate_hint(basic_pane_t *pane) {
     } else {
         lv_obj_add_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
     }
-}
-
-static void refresh_rate_sync_ta(lv_obj_t *ta) {
-    if (app_configuration->client_refresh_rate_x100 > 0) {
-        char b[24];
-        snprintf(b, sizeof b, "%.2f", app_configuration->client_refresh_rate_x100 / 100.0);
-        lv_textarea_set_text(ta, b);
-    } else {
-        lv_textarea_set_text(ta, "");
-    }
-}
-
-static void sync_custom_fps_to_refresh_rate(basic_pane_t *pane) {
-    if (pane->refresh_rate_ta == NULL || app_configuration->client_refresh_rate_x100 > 0) {
-        return;
-    }
-    int fps = app_configuration->stream.fps;
-    if (fps == 30 || fps == 60 || fps == 90 || fps == 120 || fps == 144 || fps == 240) {
-        return;
-    }
-    int x100 = fps * 100;
-    if (x100 < 2300) {
-        x100 = 2300;
-    }
-    if (x100 > 24000) {
-        x100 = 24000;
-    }
-    app_configuration->client_refresh_rate_x100 = x100;
-    refresh_rate_sync_ta(pane->refresh_rate_ta);
-}
-
-static void refresh_rate_parse_and_store(lv_obj_t *ta, basic_pane_t *pane) {
-    const char *s = lv_textarea_get_text(ta);
-    while (*s == ' ' || *s == '\t') {
-        s++;
-    }
-    if (*s == '\0') {
-        app_configuration->client_refresh_rate_x100 = 0;
-        pane->parent->needs_stream_reconnect = true;
-        return;
-    }
-    char *end = NULL;
-    double hz = strtod(s, &end);
-    (void) end;
-    if (hz < 23.0) {
-        hz = 23.0;
-    }
-    if (hz > 240.0) {
-        hz = 240.0;
-    }
-    int x100 = (int) (hz * 100.0 + 0.5);
-    if (x100 < 2300) {
-        x100 = 2300;
-    }
-    if (x100 > 24000) {
-        x100 = 24000;
-    }
-    app_configuration->client_refresh_rate_x100 = x100;
-    refresh_rate_sync_ta(ta);
-    pane->parent->needs_stream_reconnect = true;
-}
-
-static void on_refresh_rate_committed(lv_event_t *e) {
-    if (lv_event_get_code(e) != LV_EVENT_DEFOCUSED) {
-        return;
-    }
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    refresh_rate_parse_and_store(lv_event_get_target(e), pane);
-}
-
-static void on_refresh_rate_minus(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    int v = app_configuration->client_refresh_rate_x100;
-    if (v <= 0) {
-        v = 6000;
-    }
-    v -= 1;
-    if (v < 2300) {
-        v = 2300;
-    }
-    app_configuration->client_refresh_rate_x100 = v;
-    refresh_rate_sync_ta(pane->refresh_rate_ta);
-    pane->parent->needs_stream_reconnect = true;
-}
-
-static void on_refresh_rate_plus(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    int v = app_configuration->client_refresh_rate_x100;
-    if (v <= 0) {
-        v = 6000;
-    }
-    v += 1;
-    if (v > 24000) {
-        v = 24000;
-    }
-    app_configuration->client_refresh_rate_x100 = v;
-    refresh_rate_sync_ta(pane->refresh_rate_ta);
-    pane->parent->needs_stream_reconnect = true;
 }
 
 static void init_locale_entries(basic_pane_t *pane) {

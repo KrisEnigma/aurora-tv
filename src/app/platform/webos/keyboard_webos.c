@@ -16,8 +16,6 @@
 #include "logging.h"
 #include "app_webos.h"
 
-#define TV_REMOTE_TOGGLE_SOFT_INPUT 0
-
 bool stream_input_webos_intercept_remote_keys(stream_input_t *input, const SDL_KeyboardEvent *event, short *keyCode) {
     session_t *session = input->session;
     switch ((unsigned int) event->keysym.scancode) {
@@ -51,32 +49,23 @@ bool stream_input_webos_intercept_remote_keys(stream_input_t *input, const SDL_K
         case SDL_SCANCODE_WEBOS_CH_DOWN:
             *keyCode = VK_NEXT /* SDL_SCANCODE_PAGEDOWN */;
             return false;
-        case SDL_SCANCODE_WEBOS_YELLOW:
+        case SDL_SCANCODE_WEBOS_BLUE:
+            /* BLUE opens the on-screen keyboard. Matches the keyboard button's blue styling
+             * in the streaming overlay (see streaming.view.c). */
             if (input->view_only) {
                 return true;
             }
             if (event->state == SDL_PRESSED) {
                 bus_pushevent(USER_OPEN_SOFT_KEYBOARD, NULL, NULL);
-                return true;
             }
             return true;
         case SDL_SCANCODE_WEBOS_RED:
+            /* RED keeps opening the streaming overlay (options menu). */
             bus_pushevent(USER_OPEN_OVERLAY, NULL, NULL);
             return true;
-#if TV_REMOTE_TOGGLE_SOFT_INPUT
-            case SDL_SCANCODE_WEBOS_BLUE:
-                if (absinput_no_control) return true;
-                if (!app_text_input_active()) {
-                    app_start_text_input(0, 0, ui_display_width, ui_display_height);
-                } else {
-                    app_stop_text_input();
-                }
-                return true;
-            case SDL_SCANCODE_WEBOS_GREEN:
-                if (absinput_no_control) return true;
-                session_toggle_vmouse(session);
-                return true;
-#endif
+        case SDL_SCANCODE_WEBOS_YELLOW:
+            /* YELLOW is intentionally unbound during streaming (was the old keyboard shortcut). */
+            return false;
         default:
             return false;
     }

@@ -195,6 +195,39 @@ static void release_toggles(soft_kbd_t *kbd) {
     }
 }
 
+/*
+ * Paranoid cleanup after every key combo: unconditionally send key-up for ALL modifier scancodes
+ * (left, right, and generic) so the host's modifier byte and key state can never stay stuck even
+ * if a packet drops or the host's state machine desyncs. Cheap on the wire, prevents the gamepad
+ * from "going crazy" later because Ctrl/Alt/Shift was still considered held by the host.
+ */
+static void force_release_all_modifiers(soft_kbd_t *kbd) {
+    /* L/R variants hit the GFE modifier-byte fixups in InputStream.c so the host's modifier state
+     * is forced back to 0. Generic VK_SHIFT/VK_CONTROL/VK_MENU (0x10/0x11/0x12) cover hosts that
+     * track these as separate keys (e.g. some Sunshine builds and webOS guest VMs). */
+    send_modifier(kbd, VK_LSHIFT,   false);
+    send_modifier(kbd, VK_RSHIFT,   false);
+    send_modifier(kbd, 0x10 /* VK_SHIFT (generic) */,   false);
+    send_modifier(kbd, VK_LCONTROL, false);
+    send_modifier(kbd, VK_RCONTROL, false);
+    send_modifier(kbd, 0x11 /* VK_CONTROL (generic) */, false);
+    send_modifier(kbd, VK_LMENU,    false);
+    send_modifier(kbd, VK_RMENU,    false);
+    send_modifier(kbd, 0x12 /* VK_MENU (generic) */,    false);
+    if (app_configuration->syskey_capture) {
+        send_modifier(kbd, VK_LWIN, false);
+        send_modifier(kbd, VK_RWIN, false);
+    }
+    kbd->toggle_shift = false;
+    kbd->toggle_caps  = false;
+    kbd->toggle_ctrl  = false;
+    kbd->toggle_alt   = false;
+    kbd->toggle_win   = false;
+    if (kbd->btnm) {
+        kbd_refresh_case(kbd);
+    }
+}
+
 typedef struct {
     soft_kbd_t *kbd;
     short *vks;
@@ -246,6 +279,11 @@ static void on_keyboard_click(lv_event_t *e) {
     send_key(kbd, vk, true);
     send_key(kbd, vk, false);
     release_toggles(kbd);
+    /* Belt-and-suspenders: also force-release every modifier scancode and drain any tracked
+     * physical keys, so combos like Ctrl+Q (RTSS) cannot leave a stuck modifier on the host
+     * that would later poison gamepad navigation in Windows Game Bar / overlays. */
+    force_release_all_modifiers(kbd);
+    stream_input_flush_pressed_keys(kbd->input);
 }
 
 static void kbd_data_delete_cb(lv_event_t *e) {
@@ -257,7 +295,11 @@ static void kbd_data_delete_cb(lv_event_t *e) {
 static void container_delete_cb(lv_event_t *e) {
     soft_kbd_t *kbd = lv_event_get_user_data(e);
     if (kbd) {
-        release_toggles(kbd);
+        /* btnm is being torn down by LVGL alongside the container; refresh_case would touch it,
+         * so clear the pointer first and let force_release_all_modifiers skip the visual refresh. */
+        kbd->btnm = NULL;
+        force_release_all_modifiers(kbd);
+        stream_input_flush_pressed_keys(kbd->input);
         if (kbd->group) lv_group_del(kbd->group);
         free(kbd);
     }

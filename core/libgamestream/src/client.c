@@ -548,6 +548,15 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
                   "appid=%d", appId);
 
     append_param(url, sizeof(url), "mode", "%dx%dx%d", config->width, config->height, fps);
+    /* Send precise fractional refresh rate (Hz * 100) so Sunshine forks that read this parameter
+     * can configure their virtual display at the actual rate (e.g. 11988 = 119.88 Hz). The integer
+     * `mode` FPS above stays as a fallback for hosts that don't recognize this hint. */
+    if (!is_gfe && config->clientRefreshRateX100 > 0) {
+        append_param(url, sizeof(url), "clientRefreshRateX100", "%d", config->clientRefreshRateX100);
+        /* Many Sunshine virtual-display drivers work in millihertz; provide that form too. */
+        append_param(url, sizeof(url), "displayRefreshRateMillihertz", "%d",
+                     config->clientRefreshRateX100 * 10);
+    }
     append_param(url, sizeof(url), "additionalStates", "1");
     append_param(url, sizeof(url), "sops", "%d", sops);
     append_param(url, sizeof(url), "rikey", "%s", rikey_hex);

@@ -33,12 +33,30 @@
 #define PRESENTATION_OFFSET_MS_MAX 0
 #define PRESENTATION_OFFSET_MS_DEFAULT (-12)
 
+/*
+ * Minimum interval between IDR (keyframe) requests sent to the host.
+ *
+ * When Starfish signals BufferFull (SS4S_VIDEO_FEED_REQUEST_KEYFRAME) we would
+ * normally request an IDR immediately. However, an IDR frame is 4-8x larger
+ * than a P-frame; feeding it back into the decoder fills the buffer again,
+ * triggering another immediate IDR request - a runaway feedback loop. Worse,
+ * IDR requests travel over the same TCP control channel as gamepad / mouse /
+ * keyboard input, so a flood of them directly inflates perceived input
+ * latency (observed: ~1 s controller lag at high bitrate with Nvidia P1).
+ *
+ * Throttling to 1000 ms suppresses the storm. Subsequent in-window BufferFull
+ * signals are silently swallowed (counted as networkDroppedFrames); the stream
+ * self-heals from the next clean P-frames once the buffer drains.
+ */
+#define IDR_REQUEST_MIN_INTERVAL_MS 1000
+
 static int vdec_stream_target_fps = 60;
 
 static session_t *session = NULL;
 static SS4S_Player *player = NULL;
 static unsigned char *buffer = NULL;
 static int lastFrameNumber;
+static unsigned long lastIdrRequestMs = 0;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
@@ -114,6 +132,7 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     vdec_stream_format = videoFormat;
     vdec_stream_info.format = video_format_name(videoFormat);
     lastFrameNumber = 0;
+    lastIdrRequestMs = 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
 
@@ -240,7 +259,15 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
         vdec_temp_stats.submittedFrames++;
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
-        return DR_NEED_IDR;
+        unsigned long now = SDL_GetTicks();
+        if (now - lastIdrRequestMs >= IDR_REQUEST_MIN_INTERVAL_MS) {
+            lastIdrRequestMs = now;
+            commons_log_info("Session", "Buffer full, requesting IDR (throttled to %u ms)",
+                             (unsigned) IDR_REQUEST_MIN_INTERVAL_MS);
+            return DR_NEED_IDR;
+        }
+        vdec_temp_stats.networkDroppedFrames++;
+        return DR_OK;
     } else {
         commons_log_error("Session", "Video feed error %d", result);
         session_interrupt(session, false, STREAMING_INTERRUPT_DECODER);

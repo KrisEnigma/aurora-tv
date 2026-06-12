@@ -1,81 +1,93 @@
 # Aurora
 
-**Aurora** is a fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv), the community [Moonlight GameStream Client](https://moonlight-stream.org/) optimized for large screens. It runs on LG webOS TVs (C1–C5 and compatible) and Raspberry Pi with Raspbian.
+Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for **LG webOS** (C1–C5 and compatible sets), focused on high-quality streaming on OLED TVs with a remote- and gamepad-friendly UI.
 
-> **Notice:** This is an unofficial fork. All rights to the original project belong to [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv) and the Moonlight community. Aurora is provided without warranty.
+> Rights to the original project belong to [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv) and the Moonlight community. Provided without warranty.
 
-## Why this fork?
+## Highlights
 
-It was created to push the limits of LG C1 (and similar OLEDs) in 4K 120fps HDR streaming. LG’s documentation suggests ~100 Mbps decode capability, but higher bitrates have worked on stable 5 GHz WiFi, with noticeable quality gains over the common 65 Mbps limit.
+- **AMOLED layout** — pure black background (`#000000`), dark surfaces, and violet accent; launcher, game grid, and settings popups share the same theme.
+- **3.5K resolution (3456×1944)** — option between 2K and 4K; ~90% of 4K pixel area with less load on the TV decoder and lower input lag than native 4K on recent models.
+- **HDR10 (PQ)** over HEVC Main10 or AV1 Main10 (when supported).
+- **Tight display sync** (webOS) — tighter panel sync; see below.
+- Up to **400 Mbps** on the bitrate slider (UI maximum); practical guidance below.
 
-## Features
+## Recommended settings (LG OLED)
 
-- High-performance streaming on webOS (4K 120fps HDR)
-- UI optimized for large screens and remote control
-- Up to 4 controllers
-- Full keyboard overlay
-- Compact real-time performance indicator
-- **Max bitrate: 300 Mbps** (use sparingly; see warning below)
-- **HDR10 (PQ)** over HEVC Main10 or AV1 Main10 when the host sends HDR (HLG, HDR10+, and Dolby Vision are not used)
-- **Tight display sync** (webOS) — optional in **Settings → Video**; see *Fork adjustments*
-- **H.264 / HEVC / optional AV1** — enable **Use AV1 when possible** if your decoder exposes AV1 (e.g. some NDL paths); Starfish SMP may remain H.264/HEVC-only.
-- **Full-range color** — the client requests full video levels to the host (SDP), similar to Moonlight Android.
+| Setting | Suggestion |
+|---------|------------|
+| **Resolution** | **3.5K** (3456×1944) — best quality/performance balance for most titles |
+| **FPS** | 60 or 120 depending on game and network |
+| **Codec** | HEVC (H.265); AV1 if host and decoder expose it |
+| **Bitrate** | **Up to ~270 Mbps** on stable 5 GHz Wi‑Fi — reduces micro-stutters and throughput drops on heavy streams (HDR, 120 Hz). Increase gradually; visual gains above that are usually small |
+| **Tight display sync** | Enable in **Settings → Video → Smooth playback (TV)** after testing; reconnect the stream when changed |
 
-## ⚠️ Bitrate warning
+On an unstable network, start at **120–180 Mbps** for 3.5K HDR before going higher.
 
-The bitrate limit is set to **300 Mbps**. High bitrates stress the TV’s WiFi and may:
+## Tight display sync (VSync)
 
-- Increase chipset temperature
-- Raise latency on unstable networks
-- Potentially accelerate hardware wear
+On the **Starfish** decoder (webOS), video PTS follows the stream’s **nominal frame rate** (e.g. 120 Hz) and **catches up** when the stream falls behind real time, with a small fixed early presentation hint.
 
-**Use at your own risk.** Be sensible: start with moderate values (e.g. 80–150 Mbps) and only increase if the network and device are stable. See the reference table below.
+- **On:** steadier panel vsync, less visual “drag” at 120 Hz, no extra decode work.
+- **Off:** behavior closer to stock Moonlight TV.
+- **Where:** Settings → Video → *Smooth playback (TV)* / *Tight display sync* — or `[video] tight_display_sync=` in the INI. **Reconnect** after changing.
 
-## Recommended bitrate table (H.265, near-lossless quality)
+## Status overlay
 
-| Resolution | 60 fps | 120 fps | 144 fps |
-|------------|--------|---------|---------|
-| 1080p     | 40–60 Mbps | 80–100 Mbps | 100–120 Mbps |
-| 1440p     | 60–80 Mbps | 120–150 Mbps | 150–180 Mbps |
-| 4K        | 100–130 Mbps | 180–230 Mbps | 220–280 Mbps |
+### How to open
 
-*Values for H.265 (HEVC), HDR, near-visually-lossless quality. Above ~230 Mbps at 4K 120fps HDR, visual gains tend to be marginal.*
+- **Magic Remote:** **red (RED)** button or **EXIT** key (traditional remote).
+- **Gamepad:** press **LB + RB + Back + Start** together, then **release** (opens the streaming menu).
+- **Physical keyboard on the host (via stream):** `Ctrl + Alt + Shift + S`.
+- During streaming, the app also hints at holding **BACK** (behavior may vary by remote model).
 
-## Performance notes
+From the menu: **Full keyboard**, virtual mouse, suspend, and quit. The compact stats bar can stay pinned on start (Settings → Basic).
 
-- **HEVC / AV1 negotiation** — With **Use H265** and/or **Use AV1** enabled, the client negotiates **reference-frame invalidation (RFI)** and a **multi-slice** hint where applicable. Reconnect the streaming session after changing video settings (the app can prompt you while a stream is active).
-- **Stats overlay** — When the performance overlay is **hidden**, the app uses a **2 s** measurement window (instead of 1 s) and skips **RTT** queries and decoder-latency reads until you show stats again, to reduce overhead on the hot path.
-- **Zero-copy decode** — Frames are still **assembled into a staging buffer** before `SS4S_PlayerVideoFeed`. True zero-copy would need **SS4S / platform API** support for scatter-gather or imported buffers (future work).
-- **Latency research (optional)** — Other Moonlight TV forks (e.g. browser/WASM clients for other platforms) may carry useful `moonlight-common-c` diffs; porting ideas still depends on the webOS **SS4S** path and is not a drop-in.
+### Compact mode (single line)
 
-## Fork adjustments
+Example: `3456×1944 HDR H.265 FPS 120 N 2/1ms H 4ms S 1ms D 8ms TL 15ms FD 0.00% 245.0 Mbps`
 
-- **300 Mbps** – Raised bitrate limit; use responsibly
-- **Video pipeline** – Frame pacing and decoding path aligned with upstream [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv) (same ss4s submodule baseline)
-- **HDR** – Starfish is signaled as **HDR10** only (no HLG / HDR10+ / Dolby Vision paths)
-- **Tight display sync** (webOS, optional) — Starfish video PTS follows the **nominal stream frame rate** and **catches up to wall-clock time** when the stream runs late, with a **fixed** small negative presentation offset toward the panel. Toggle under **Settings → Video → Smooth playback (TV)**; reconnect streaming after changing. INI: `[video] tight_display_sync=`.
+| Field | Meaning |
+|-------|---------|
+| **Resolution / HDR / Codec** | Current stream (SDR or HDR, H.264/H.265/AV1) |
+| **FPS** | Render rate on the panel (capped to display refresh) |
+| **N** | Network RTT (average / variance in ms) |
+| **H** | Average host capture latency (ms) |
+| **S** | Submit time to the decoder (ms) |
+| **D** | Average TV decoder latency only (ms) |
+| **TL** | Estimated total latency (N + H + S + D) |
+| **FD** | % of frames dropped on the network |
+| **Mbps** | Measured video throughput |
 
-## Documentation
+**Color dot:** green ≤25 ms, yellow ≤30 ms, red >30 ms (TL).
 
-- **[Build and installation (webOS)](docs/BUILD_WEBOS.md)** – Developer mode, build, and manual installation
-- **[webOS Homebrew catalog](docs/WEBOS_HOMEBREW.md)** – How to submit Aurora to [webosbrew/apps-repo](https://github.com/webosbrew/apps-repo) (Homebrew Channel)
+### Full mode
 
-## Tested on LG OLED (webOS)
+Same metrics in separate rows: video, audio, RTT, network/render FPS, frame drop, bitrate, host and decoder latency.
 
-### LG C1
+## Full keyboard (soft keyboard)
 
-- 4K 120fps HDR, H.265, ~230 Mbps
-- Decoding Lattency: ~10 ms (network 1/2 ms, decode 8–10 ms, host ~4 ms)
-- Controllers tested:
-  - Xbox Series S – rumble working
-  - 8BitDo Ultimate (Bluetooth, D-Input) – low latency, rumble not supported by TV
+### How to open
 
-### LG C5
+1. Open the **streaming overlay** (see above).
+2. Select **Full keyboard** — or press the **blue (BLUE)** button on the Magic Remote during streaming.
 
-- 4K 120fps HDR, H.265, **300 Mbps** — average **decoder latency ~10 ms** in practice under that profile
-- Playable without issues for demanding titles (e.g. **Tony Hawk’s Pro Skater 3 + 4** remake) and for lighter or older ports (e.g. **Mega Man X5**)
+Keys are sent directly to the PC (**Ctrl**, **Alt**, **Shift**, **Win** are *sticky*: e.g. Alt then Tab = Alt+Tab). **B / Back** closes the keyboard (on webOS remotes it does not send Escape to the host in that case).
 
-## License and credits
+### Known issues (to be fixed)
 
-- Base project: [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv)
-- Components: [moonlight-embedded](https://github.com/irtimmer/moonlight-embedded) (libgamestream and decoder)
+- The remote may send **both key and gamepad events for one press**, toggling input mode while the keyboard is open.
+- **Modifier combos** (e.g. Ctrl+Q) can sometimes leave a modifier stuck on the host and affect gamepad input on Windows (Game Bar, etc.) — there is mitigation, but it is not 100% reliable in all cases.
+- **TV remote D-pad** on the keyboard: only navigates keys (arrows + OK); other remote keys may close the keyboard or reach the host.
+- **Yellow (YELLOW)** on the Magic Remote **no longer** opens the keyboard (legacy shortcut intentionally removed).
+- While the keyboard is open, avoid switching quickly between TV remote and gamepad.
+
+## Build and installation
+
+- **[webOS build](docs/BUILD_WEBOS.md)** — developer mode, Docker/WSL, manual IPK install.
+- **[Homebrew catalog](docs/WEBOS_HOMEBREW.md)** — publishing to [webosbrew/apps-repo](https://github.com/webosbrew/apps-repo).
+
+## Credits
+
+- Base: [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv)
+- Components: [moonlight-embedded](https://github.com/irtimmer/moonlight-embedded), [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c)

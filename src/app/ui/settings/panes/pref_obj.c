@@ -348,13 +348,11 @@ static void pref_dropdown_key_hack_cb(lv_event_t *event) {
         case LV_KEY_LEFT:
         case LV_KEY_RIGHT: {
             if (lv_dropdown_is_open(target)) {
-                if (state->opened) {
-                    return;
-                }
-                lv_dropdown_close(target);
+                state->opened = true;
                 return;
             }
-            break;
+            lv_event_stop_processing(event);
+            return;
         }
     }
 }

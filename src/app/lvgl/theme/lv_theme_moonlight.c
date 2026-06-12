@@ -182,6 +182,10 @@ static void lv_stop_text_input(lv_event_t *event) {
 }
 
 static void msgbox_key(lv_event_t *event) {
+    lv_obj_t *mbox = lv_event_get_current_target(event);
+    if (lv_obj_has_flag(mbox, LV_OBJ_FLAG_USER_4)) {
+        return;
+    }
     lv_obj_t *target = lv_event_get_target(event);
     lv_group_t *group = lv_obj_get_group(target);
     if (group == NULL) {

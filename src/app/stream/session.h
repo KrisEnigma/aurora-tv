@@ -65,6 +65,7 @@ typedef struct session_config_t {
     uint8_t stick_deadzone;
     bool hid_passthrough;
     int hid_passthrough_port;
+    bool hid_passthrough_autoplug;
 } session_config_t;
 
 extern int streaming_errno;

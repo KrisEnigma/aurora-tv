@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -258,12 +259,47 @@ int send_agent_command(const char *command, char *response, size_t response_len)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons((uint16_t)g_agent_port);
-    if (inet_aton(g_agent_host, &addr.sin_addr) == 0 ||
-        connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+    if (inet_aton(g_agent_host, &addr.sin_addr) == 0) {
         close(fd);
         g_agent_online = false;
         return -1;
     }
+    /* Non-blocking connect with a bounded timeout: SO_SNDTIMEO does NOT cap the
+     * TCP connect phase, so a host that silently drops SYNs (firewall) would hang
+     * the caller for tens of seconds. These commands now also run on a stream-time
+     * poll on the UI thread, so a stall must never happen. */
+    int sock_flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, sock_flags | O_NONBLOCK);
+    int crc = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+    if (crc != 0) {
+        if (errno != EINPROGRESS) {
+            close(fd);
+            g_agent_online = false;
+            return -1;
+        }
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(fd, &wfds);
+        /* The agent is the stream host we're already connected to — a healthy LAN
+         * connect completes in a few ms. Keep this short so a host that black-holes
+         * SYNs can't stall the UI thread (these run on the auto-plug poll). */
+        struct timeval ctv;
+        ctv.tv_sec = 0;
+        ctv.tv_usec = 300000;
+        if (select(fd + 1, NULL, &wfds, NULL, &ctv) <= 0) {
+            close(fd);
+            g_agent_online = false;
+            return -1;
+        }
+        int soerr = 0;
+        socklen_t soerr_len = sizeof(soerr);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &soerr_len) != 0 || soerr != 0) {
+            close(fd);
+            g_agent_online = false;
+            return -1;
+        }
+    }
+    fcntl(fd, F_SETFL, sock_flags);   /* restore blocking; send/recv bounded by SO_*TIMEO */
 
     char line[512];
     snprintf(line, sizeof(line), "%s\n", command);
@@ -356,7 +392,12 @@ void stop_session(const char *key)
         ctm_controller_destroy(g_sessions[index].controller);
         g_sessions[index].controller = NULL;
     }
-    if (g_sessions[index].port > 0) {
+    /* Tell the host to drop the bridge — but skip the (blocking) round-trip when
+     * the agent is already known unreachable: it would only time out, and the
+     * first failure flips g_agent_online, so a mass-disconnect against a dead host
+     * costs at most one connect timeout on the UI thread (not one per device). The
+     * host GCs orphan virtual controllers when it comes back anyway. */
+    if (g_sessions[index].port > 0 && g_agent_online) {
         char cmd[160];
         char response[256];
         snprintf(cmd, sizeof(cmd), "BRIDGE_STOP %s", g_sessions[index].busid);
@@ -537,5 +578,189 @@ bool plug_in_node(logical_device_t *item, int scan_index)
     char key[96];
     node_session_key(item, scan_index, key, sizeof(key));
     return plug_in_scan_index(item, scan_index, key);
+}
+
+/* ---- auto-plug reconcile ------------------------------------------------- */
+
+#define AUTOPLUG_MAX_FAILS 3
+/* After a failed plug attempt (a blocking agent round-trip that just stalled the
+ * UI thread), skip plug attempts for this many polls so an unreachable/slow host
+ * can't stall the main loop every tick. */
+#define AUTOPLUG_FAIL_COOLDOWN_POLLS 4
+static int g_autoplug_plug_cooldown;
+
+static autoplug_entry_t *autoplug_entry_for(const char *key, bool create)
+{
+    if (!key || !key[0]) return NULL;
+    for (int i = 0; i < g_autoplug_count; ++i) {
+        if (strcmp(g_autoplug[i].key, key) == 0) {
+            return &g_autoplug[i];
+        }
+    }
+    if (!create || g_autoplug_count >= MAX_DEVICES) return NULL;
+    autoplug_entry_t *e = &g_autoplug[g_autoplug_count++];
+    memset(e, 0, sizeof(*e));
+    snprintf(e->key, sizeof(e->key), "%s", key);
+    e->state = AUTOPLUG_PENDING;
+    return e;
+}
+
+void autoplug_mark_done(const char *key)
+{
+    autoplug_entry_t *e = autoplug_entry_for(key, true);
+    if (e) {
+        e->state = AUTOPLUG_DONE;
+        e->fail_count = 0;
+    }
+}
+
+void autoplug_reset(void)
+{
+    g_autoplug_count = 0;
+    g_autoplug_plug_cooldown = 0;
+}
+
+/* A device's "plugged" flag is persisted only in g_plugged_keys, which is NOT
+ * pruned when the device physically disappears. Without this, a controller that
+ * sleeps / disconnects and reconnects mid-stream would come back wearing a stale
+ * "plugged" flag and the reconcile would never re-bridge it. Reap any plugged key
+ * whose device is gone: tear down the now-dead local session (stop_session also
+ * BRIDGE_STOPs the host so it doesn't accumulate orphan virtual controllers) and
+ * clear the flag, so the device is auto-plugged afresh when it returns. */
+static void autoplug_reap_vanished(void)
+{
+    for (int i = 0; i < g_plugged_key_count;) {
+        bool present = false;
+        for (int j = 0; j < g_devices.count; ++j) {
+            if (strcmp(g_devices.items[j].key, g_plugged_keys[i]) == 0) {
+                present = true;
+                break;
+            }
+        }
+        if (present) {
+            ++i;
+            continue;
+        }
+        /* Absent. Copy the key first: stop_session/set_plug_key mutate g_sessions /
+         * g_plugged_keys (the latter shrinks via memmove), so do not advance i. */
+        char key[96];
+        snprintf(key, sizeof(key), "%s", g_plugged_keys[i]);
+        stop_session(key);
+        set_plug_key(key, false);
+    }
+}
+
+/* Drop bookkeeping for devices no longer present so a controller that
+ * disconnects and reconnects (e.g. a DualSense re-paired over Bluetooth) is
+ * auto-plugged afresh, and a previously "given up" device gets a clean retry. */
+static void autoplug_prune(void)
+{
+    for (int i = 0; i < g_autoplug_count;) {
+        bool present = false;
+        for (int j = 0; j < g_devices.count; ++j) {
+            if (strcmp(g_devices.items[j].key, g_autoplug[i].key) == 0) {
+                present = true;
+                break;
+            }
+        }
+        if (present) {
+            ++i;
+        } else {
+            memmove(&g_autoplug[i], &g_autoplug[i + 1],
+                    (size_t)(g_autoplug_count - i - 1) * sizeof(g_autoplug[0]));
+            g_autoplug_count--;
+        }
+    }
+}
+
+/* Defensive secondary gate for AUTO-plug ONLY (manual plug stays unrestricted):
+ * never auto-bridge an interface that identifies itself as a keyboard / keypad /
+ * mouse / pointer / consumer-control, even if it somehow carried a controller
+ * VID/PID. A DualSense's gamepad interface reports Generic-Desktop/Gamepad, so
+ * this never blocks it; an undetermined usage (0) falls through to the VID/PID
+ * gate. This is what keeps e.g. a Bluetooth keyboard or media remote from ever
+ * being passed to the host. */
+static bool usage_is_input_peripheral(uint16_t up, uint16_t us)
+{
+    if (up == 0x0c) return true;            /* Consumer Control (media keys/remote) */
+    if (up == 0x01) {                       /* Generic Desktop */
+        return us == 0x01 ||                /*   Pointer   */
+               us == 0x02 ||                /*   Mouse     */
+               us == 0x06 ||                /*   Keyboard  */
+               us == 0x07;                  /*   Keypad    */
+    }
+    return false;
+}
+
+static bool autoplug_node_is_peripheral(const logical_device_t *item)
+{
+    int idx = first_scan_index_for_item(item);
+    if (idx < 0 || idx >= g_scan.count) {
+        return false;
+    }
+    return usage_is_input_peripheral(g_scan.devices[idx].usage_page,
+                                     g_scan.devices[idx].usage);
+}
+
+void hid_pt_autoplug_reconcile(void)
+{
+    autoplug_reap_vanished();   /* drop stale plugged state for devices that left */
+    autoplug_prune();           /* drop bookkeeping for devices that left */
+
+    /* Backing off after a recent plug failure: don't issue any (blocking) agent
+     * round-trips this tick, but still record manually/already-plugged devices so a
+     * deliberate plug-out keeps being respected. */
+    if (g_autoplug_plug_cooldown > 0) {
+        g_autoplug_plug_cooldown--;
+        for (int i = 0; i < g_devices.count; ++i) {
+            if (g_devices.items[i].plugged) {
+                autoplug_mark_done(g_devices.items[i].key);
+            }
+        }
+        return;
+    }
+
+    for (int i = 0; i < g_devices.count; ++i) {
+        logical_device_t *item = &g_devices.items[i];
+        if (item->plugged) {
+            /* Already bridged (by us or manually): remember it so a later manual
+             * plug-out is respected instead of being re-plugged on the next poll. */
+            autoplug_mark_done(item->key);
+            continue;
+        }
+        const char *kind = bridge_kind_for_item(item);
+        if (strcmp(kind, "hid") == 0) {
+            continue;   /* only known controllers (ds5/ds4/xbox/puck), never generic HID */
+        }
+        /* The puck is a composite device whose first interface may be keyboard/
+         * mouse; its dedicated handling picks the gamepad interface, so don't apply
+         * the peripheral guard to it. For the simple pads, refuse anything that
+         * presents as a keyboard/mouse/consumer-control interface. */
+        if (strcmp(kind, "puck") != 0 && autoplug_node_is_peripheral(item)) {
+            continue;
+        }
+        autoplug_entry_t *e = autoplug_entry_for(item->key, true);
+        if (!e || e->state != AUTOPLUG_PENDING) {
+            continue;   /* DONE (user-managed) or GIVEUP */
+        }
+        if (plug_in_item(item)) {
+            item->plugged = true;
+            set_plug_key(item->key, true);
+            e->state = AUTOPLUG_DONE;
+            e->fail_count = 0;
+            log_append("auto-plugged %s (%s)", item->name, kind);
+            /* success is cheap; keep going so a second controller plugs the same tick */
+        } else {
+            if (++e->fail_count >= AUTOPLUG_MAX_FAILS) {
+                e->state = AUTOPLUG_GIVEUP;
+                log_append("auto-plug: giving up on %s after %d attempts", item->name, e->fail_count);
+            }
+            /* A failure means a blocking agent round-trip just stalled the UI thread.
+             * Stop after the first failure this tick and back off, so an unreachable
+             * or slow host can't freeze the main loop on every poll. */
+            g_autoplug_plug_cooldown = AUTOPLUG_FAIL_COOLDOWN_POLLS;
+            break;
+        }
+    }
 }
 

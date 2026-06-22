@@ -159,7 +159,8 @@ bool session_start_input(session_t *session) {
 #endif
     if (session->config.hid_passthrough) {
         hid_passthrough_manager_start(&session->hid_pt, session->server->serverInfo.address,
-                                      session->config.hid_passthrough_port);
+                                      session->config.hid_passthrough_port,
+                                      session->config.hid_passthrough_autoplug);
     }
     session_input_started(&session->input);
     return true;
@@ -190,7 +191,8 @@ void session_ensure_hid_passthrough(session_t *session) {
         return;
     }
     hid_passthrough_manager_start(&session->hid_pt, session->server->serverInfo.address,
-                                  session->config.hid_passthrough_port);
+                                  session->config.hid_passthrough_port,
+                                  session->config.hid_passthrough_autoplug);
 }
 
 void session_toggle_vmouse(session_t *session) {
@@ -306,6 +308,7 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     }
     config->hid_passthrough = app_config->hid_passthrough;
     config->hid_passthrough_port = app_config->hid_passthrough_port > 0 ? app_config->hid_passthrough_port : 48054;
+    config->hid_passthrough_autoplug = app_config->hid_passthrough_autoplug;
 
     SS4S_VideoCapabilities video_cap = app->ss4s.video_cap;
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;

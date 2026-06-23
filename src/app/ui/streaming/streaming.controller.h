@@ -81,4 +81,6 @@ bool streaming_stats_shown();
 
 bool streaming_refresh_stats();
 
+void streaming_toggle_stats_pin(void);
+
 void streaming_notice_show(const char *message);

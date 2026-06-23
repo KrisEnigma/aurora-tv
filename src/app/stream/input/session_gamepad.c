@@ -14,10 +14,12 @@
 #define QUIT_BUTTONS (PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG)
 #define GAMEPAD_COMBO_VMOUSE (LB_FLAG | RS_CLK_FLAG)
 #define GAMEPAD_COMBO_KEYBOARD (RB_FLAG | RS_CLK_FLAG)
+#define GAMEPAD_COMBO_STATS (LB_FLAG | LS_CLK_FLAG)
 
 static bool quit_combo_pressed = false;
 static bool vmouse_combo_pressed = false;
 static bool keyboard_combo_pressed = false;
+static bool stats_combo_pressed = false;
 
 static void release_buttons(stream_input_t *input, app_gamepad_state_t *gamepad);
 
@@ -127,6 +129,9 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
     } else if (gamepad_combo_check(gamepad->buttons, GAMEPAD_COMBO_KEYBOARD)) {
         keyboard_combo_pressed = true;
         return;
+    } else if (gamepad_combo_check(gamepad->buttons, GAMEPAD_COMBO_STATS)) {
+        stats_combo_pressed = true;
+        return;
     }
     if (gamepad->buttons == 0) {
         if (quit_combo_pressed) {
@@ -143,6 +148,11 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
             keyboard_combo_pressed = false;
             release_buttons(input, gamepad);
             bus_pushevent(USER_OPEN_SOFT_KEYBOARD, NULL, NULL);
+            return;
+        } else if (stats_combo_pressed) {
+            stats_combo_pressed = false;
+            release_buttons(input, gamepad);
+            bus_pushevent(USER_TOGGLE_STATS_PIN, NULL, NULL);
             return;
         }
     }

@@ -56,6 +56,8 @@ static void update_buttons_layout(streaming_controller_t *controller);
 
 static void pin_toggle(lv_event_t *e);
 
+static void streaming_set_stats_pinned(streaming_controller_t *controller, bool pinned);
+
 /** Pretty codec label for stats (matches session_video video_format_name strings). */
 static const char *streaming_codec_display(const char *fmt) {
     if (fmt == NULL || fmt[0] == '\0') {
@@ -356,18 +358,8 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
             lv_obj_add_flag(controller->overlay, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(controller->hint, LV_OBJ_FLAG_HIDDEN);
 
-            bool show_stats = app_configuration->show_stats_on_start || controller->network_test;
-            if (show_stats) {
-                lv_obj_set_parent(controller->stats, lv_layer_top());
-                if (app_configuration->show_stats_compact) {
-                    lv_obj_align(controller->stats, LV_ALIGN_TOP_LEFT, 0, 0);
-                } else {
-                    lv_obj_align(controller->stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(20), LV_DPX(20));
-                }
-                lv_obj_add_state(controller->stats, LV_STATE_USER_1);
-                lv_obj_add_state(controller->stats_pin, LV_STATE_CHECKED);
-                overlay_pinned = true;
-                streaming_refresh_stats();
+            if (app_configuration->show_stats_on_start || controller->network_test) {
+                streaming_set_stats_pinned(controller, true);
             }
 
             if (controller->network_test && controller->network_test_timer == NULL) {
@@ -402,6 +394,10 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
             if (streaming_soft_keyboard_shown()) {
                 soft_keyboard_close_cb(controller);
             }
+            return true;
+        }
+        case USER_TOGGLE_STATS_PIN: {
+            streaming_toggle_stats_pin();
             return true;
         }
         case USER_OPEN_SOFT_KEYBOARD: {
@@ -666,20 +662,45 @@ static void update_buttons_layout(streaming_controller_t *controller) {
     app_input_set_button_points(&controller->global->ui.input, controller->button_points);
 }
 
+void streaming_toggle_stats_pin(void) {
+    if (!current_controller) {
+        return;
+    }
+    streaming_set_stats_pinned(current_controller, !overlay_pinned);
+}
+
+static void streaming_set_stats_pinned(streaming_controller_t *controller, bool pinned) {
+    if (!controller || !controller->stats) {
+        return;
+    }
+    lv_obj_t *stats = controller->stats;
+    bool currently_pinned = stats->parent == lv_layer_top();
+    if (pinned == currently_pinned) {
+        overlay_pinned = pinned;
+        return;
+    }
+    overlay_pinned = pinned;
+    if (pinned) {
+        lv_obj_clear_flag(stats, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_parent(stats, lv_layer_top());
+        if (app_configuration->show_stats_compact) {
+            lv_obj_align(stats, LV_ALIGN_TOP_LEFT, 0, 0);
+        } else {
+            lv_obj_align(stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(20), LV_DPX(20));
+        }
+        lv_obj_add_state(stats, LV_STATE_USER_1);
+        lv_obj_add_state(controller->stats_pin, LV_STATE_CHECKED);
+        streaming_refresh_stats();
+    } else {
+        lv_obj_set_parent(stats, controller->base.obj);
+        lv_obj_clear_state(stats, LV_STATE_USER_1);
+        lv_obj_clear_state(controller->stats_pin, LV_STATE_CHECKED);
+    }
+}
+
 static void pin_toggle(lv_event_t *e) {
     lv_obj_t *toggle_view = lv_event_get_user_data(e);
     lv_fragment_t *fragment = lv_obj_get_user_data(toggle_view);
     bool checked = lv_obj_has_state(lv_event_get_current_target(e), LV_STATE_CHECKED);
-    bool pinned = toggle_view->parent != fragment->obj;
-    overlay_pinned = checked;
-    if (checked == pinned) {
-        return;
-    }
-    if (checked) {
-        lv_obj_set_parent(toggle_view, lv_layer_top());
-        lv_obj_add_state(toggle_view, LV_STATE_USER_1);
-    } else {
-        lv_obj_set_parent(toggle_view, fragment->obj);
-        lv_obj_clear_state(toggle_view, LV_STATE_USER_1);
-    }
+    streaming_set_stats_pinned((streaming_controller_t *) fragment, checked);
 }

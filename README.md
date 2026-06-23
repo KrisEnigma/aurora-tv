@@ -52,8 +52,9 @@ Hold the buttons together, then **release all at once** to trigger (same pattern
 | **LB + RB + Back + Start** | Open streaming menu (overlay) |
 | **RB + RS** | Open **Full keyboard** directly |
 | **LB + RS** | Toggle **Virtual mouse** |
+| **LB + LS** | Toggle **pinned performance stats** |
 
-**Xbox layout:** **LB** / **RB** = left / right bumper; **RS** = press the right analog stick; **Back** = View; **Start** = Menu.
+**Xbox layout:** **LB** / **RB** = left / right bumper; **LS** / **RS** = press the left / right analog stick; **Back** = View; **Start** = Menu.
 
 **Virtual mouse** must be enabled first in **Settings → Input → Virtual mouse**. When active:
 

@@ -29,13 +29,15 @@ void hid_passthrough_manager_deinit(hid_passthrough_manager_t *manager) {
     hid_passthrough_manager_stop(manager);
 }
 
-int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port) {
+int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port,
+                                  bool autoplug) {
     if (!manager || !host || !host[0]) {
         return -1;
     }
     strncpy(manager->host, host, sizeof(manager->host) - 1);
     manager->host[sizeof(manager->host) - 1] = '\0';
     manager->port = port > 0 ? port : HID_PT_DEFAULT_PORT;
+    manager->autoplug = autoplug;
 
     ctm_bridge_set_agent_host(manager->host, manager->port);
     g_running = true;
@@ -59,6 +61,7 @@ void hid_passthrough_manager_stop(hid_passthrough_manager_t *manager) {
     release_local_sessions_on_exit();
     g_plugged_key_count = 0;
     g_expanded_key_count = 0;
+    autoplug_reset();
     hid_pt_sync_plugged_state();
     manager->running = false;
 }
@@ -163,6 +166,16 @@ void hid_passthrough_manager_rescan(hid_passthrough_manager_t *manager) {
     }
 
     hid_pt_sync_plugged_state();
+}
+
+void hid_passthrough_manager_poll(hid_passthrough_manager_t *manager) {
+    if (!manager || !manager->running) {
+        return;
+    }
+    hid_passthrough_manager_rescan(manager);
+    if (manager->autoplug) {
+        hid_pt_autoplug_reconcile();
+    }
 }
 
 #endif

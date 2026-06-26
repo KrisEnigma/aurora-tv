@@ -499,6 +499,10 @@ static void plug_button_cb(lv_event_t *event) {
 
     item->plugged = requested_state;
     set_plug_key(item->key, item->plugged);
+    /* The user took manual control of this device: stop auto-managing it (so a
+     * deliberate plug-out is not re-plugged by the reconcile poll) until it
+     * physically reconnects. */
+    autoplug_mark_done(item->key);
     panel->selected_index = index;
     snprintf(panel->selected_key, sizeof(panel->selected_key), "%s", item->key);
 

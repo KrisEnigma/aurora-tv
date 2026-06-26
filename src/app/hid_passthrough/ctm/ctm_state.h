@@ -175,6 +175,22 @@ extern pthread_mutex_t g_bt_mac_mutex;
 extern char g_bt_macs[MAX_DEVICES][64];
 extern int g_bt_mac_count;
 
+/* ---- auto-plug reconcile state (ui_bridge.c) ----------------------------- */
+typedef enum {
+    AUTOPLUG_PENDING = 0,   /* recognized controller, not yet bridged: eligible */
+    AUTOPLUG_DONE,          /* bridged by us, or the user took manual control */
+    AUTOPLUG_GIVEUP         /* repeated plug failures: stop retrying until reconnect */
+} autoplug_state_t;
+
+typedef struct {
+    char key[96];
+    autoplug_state_t state;
+    int fail_count;
+} autoplug_entry_t;
+
+extern autoplug_entry_t g_autoplug[MAX_DEVICES];
+extern int g_autoplug_count;
+
 extern char g_log[LOG_LEN];
 extern size_t g_log_used;
 extern pthread_mutex_t g_log_mutex;   /* guards g_log + g_log_dirty */
@@ -282,6 +298,15 @@ void release_local_sessions_on_exit(void);
 const char *bridge_kind_for_item(const logical_device_t *item);
 bool plug_in_item(logical_device_t *item);
 bool plug_in_node(logical_device_t *item, int scan_index);   /* bridge ONE chosen hidraw */
+
+/* Auto-plug reconcile: bridge every connected, recognized controller that is not
+ * already plugged and is still auto-managed. Idempotent; cheap when nothing new. */
+void hid_pt_autoplug_reconcile(void);
+/* Mark a device key as user-/manager-owned so the reconcile leaves it alone (e.g.
+ * after a manual plug-out). Cleared when the device disconnects. */
+void autoplug_mark_done(const char *key);
+/* Forget all auto-plug bookkeeping (called when the passthrough session stops). */
+void autoplug_reset(void);
 void node_session_key(const logical_device_t *item, int scan_index, char *out, size_t out_len);
 
 /* Host app (moonlight-tv): pin the Windows CTM agent to the streaming PC IP. */

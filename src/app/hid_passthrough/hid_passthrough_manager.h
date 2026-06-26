@@ -11,6 +11,7 @@
 
 struct hid_passthrough_manager {
     bool running;
+    bool autoplug;
     char host[128];
     int port;
 };
@@ -32,11 +33,18 @@ void hid_passthrough_manager_init(hid_passthrough_manager_t *manager);
 
 void hid_passthrough_manager_deinit(hid_passthrough_manager_t *manager);
 
-int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port);
+int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port,
+                                  bool autoplug);
 
 void hid_passthrough_manager_stop(hid_passthrough_manager_t *manager);
 
 bool hid_passthrough_manager_active(const hid_passthrough_manager_t *manager);
+
+/* Rescan attached HID devices and, when autoplug is enabled, bridge any connected
+ * game controller (DS5/DS4/Xbox/puck) that is not already plugged. Idempotent and
+ * safe to call on a cadence to pick up controllers connected mid-stream (e.g. a
+ * DualSense paired over Bluetooth while a game is running). LVGL-thread only. */
+void hid_passthrough_manager_poll(hid_passthrough_manager_t *manager);
 
 int hid_passthrough_manager_device_count(hid_passthrough_manager_t *manager);
 
@@ -74,10 +82,12 @@ static inline void hid_passthrough_manager_deinit(hid_passthrough_manager_t *man
     (void) manager;
 }
 
-static inline int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port) {
+static inline int hid_passthrough_manager_start(hid_passthrough_manager_t *manager, const char *host, int port,
+                                                bool autoplug) {
     (void) manager;
     (void) host;
     (void) port;
+    (void) autoplug;
     return -1;
 }
 
@@ -88,6 +98,10 @@ static inline void hid_passthrough_manager_stop(hid_passthrough_manager_t *manag
 static inline bool hid_passthrough_manager_active(const hid_passthrough_manager_t *manager) {
     (void) manager;
     return false;
+}
+
+static inline void hid_passthrough_manager_poll(hid_passthrough_manager_t *manager) {
+    (void) manager;
 }
 
 #endif

@@ -2,8 +2,13 @@
 #include "session_input.h"
 
 #include <SDL_stdinc.h>
+#include <math.h>
+
+#define VMOUSE_SCROLL_SENSITIVITY 4.0
 
 static short calc_mouse_movement(short axis);
+
+static short calc_scroll_delta(short axis);
 
 static Uint32 vmouse_timer_callback(Uint32 interval, void *param);
 
@@ -11,6 +16,7 @@ void session_input_set_vmouse_active(session_input_vmouse_t *vmouse, bool active
     vmouse->state.active = active;
     if (!active) {
         vmouse_set_vector(vmouse, 0, 0);
+        vmouse_set_scroll(vmouse, 0, 0);
         vmouse_set_trigger(vmouse, 0, 0);
     }
 }
@@ -22,14 +28,13 @@ bool session_input_is_vmouse_active(session_input_vmouse_t *vmouse) {
 void vmouse_set_vector(session_input_vmouse_t *vmouse, short x, short y) {
     vmouse->state.x = calc_mouse_movement(x);
     vmouse->state.y = calc_mouse_movement((short) -SDL_max(y, -32767));
-    if (vmouse->state.x || vmouse->state.y) {
-        if (!vmouse->timer_id) {
-            vmouse->timer_id = SDL_AddTimer(0, vmouse_timer_callback, vmouse);
-        }
-    } else if (vmouse->timer_id) {
-        SDL_RemoveTimer(vmouse->timer_id);
-        vmouse->timer_id = 0;
-    }
+    vmouse_update_timer(vmouse);
+}
+
+void vmouse_set_scroll(session_input_vmouse_t *vmouse, short x, short y) {
+    vmouse->state.scroll_x = calc_scroll_delta(x);
+    vmouse->state.scroll_y = calc_scroll_delta(y);
+    vmouse_update_timer(vmouse);
 }
 
 void vmouse_set_trigger(session_input_vmouse_t *vmouse, char l, char r) {
@@ -46,27 +51,55 @@ void vmouse_set_trigger(session_input_vmouse_t *vmouse, char l, char r) {
 }
 
 void vmouse_set_modifier(session_input_vmouse_t *vmouse, bool v) {
-    vmouse->state.modifier = v;
+    (void) v;
+}
+
+void vmouse_update_timer(session_input_vmouse_t *vmouse) {
+    if (vmouse->state.x || vmouse->state.y || vmouse->state.scroll_x || vmouse->state.scroll_y) {
+        if (!vmouse->timer_id) {
+            vmouse->timer_id = SDL_AddTimer(0, vmouse_timer_callback, vmouse);
+        }
+    } else if (vmouse->timer_id) {
+        SDL_RemoveTimer(vmouse->timer_id);
+        vmouse->timer_id = 0;
+    }
 }
 
 static Uint32 vmouse_timer_callback(Uint32 interval, void *param) {
     (void) interval;
     session_input_vmouse_t *vmouse = param;
-    if (!vmouse->state.active || (!vmouse->state.x && !vmouse->state.y)) {
+    if (!vmouse->state.active) {
         return 0;
     }
+
     short speed = 4;
     double speed_divider = 32 - SDL_max(0, SDL_min(speed, 16));
     double x = vmouse->state.x / speed_divider;
     double y = vmouse->state.y / speed_divider;
     double abs_x = SDL_fabs(x), abs_y = SDL_fabs(y);
-    if (vmouse->state.modifier) {
-        abs_y /= 20.0;
-        LiSendHighResScrollEvent((short) (abs_y > 1 ? -y : -y / abs_y));
-    } else {
+
+    if (vmouse->state.x || vmouse->state.y) {
         LiSendMouseMoveEvent((short) (abs_x > 1 ? x : x / abs_x), (short) (abs_y > 1 ? y : y / abs_y));
     }
-    return SDL_max(5, SDL_min(5 / SDL_max(abs_x, abs_y), 20));
+
+    if (vmouse->state.scroll_x || vmouse->state.scroll_y) {
+        double scroll_x = vmouse->state.scroll_x;
+        double scroll_y = vmouse->state.scroll_y;
+        double abs_sx = SDL_fabs(scroll_x), abs_sy = SDL_fabs(scroll_y);
+        if (scroll_y != 0) {
+            LiSendHighResScrollEvent((short) (abs_sy > 1 ? -scroll_y : -scroll_y / abs_sy));
+        }
+        if (scroll_x != 0) {
+            LiSendHighResHScrollEvent((short) (abs_sx > 1 ? scroll_x : scroll_x / abs_sx));
+        }
+    }
+
+    double activity = SDL_max(SDL_max(abs_x, abs_y),
+                              SDL_max(SDL_fabs(vmouse->state.scroll_x), SDL_fabs(vmouse->state.scroll_y)));
+    if (activity <= 0) {
+        return 0;
+    }
+    return SDL_max(5, SDL_min(5 / activity, 20));
 }
 
 static short calc_mouse_movement(short axis) {
@@ -74,4 +107,14 @@ static short calc_mouse_movement(short axis) {
     short threshold = 4096;
     if (abs_axis < threshold) { return 0; }
     return (short) (SDL_sqrt(abs_axis - threshold) * (axis > 0 ? 1 : -1));
+}
+
+static short calc_scroll_delta(short axis) {
+    if (axis == 0) {
+        return 0;
+    }
+    double normalized = axis / 32767.0;
+    double scaled = normalized * (VMOUSE_SCROLL_SENSITIVITY / 4.0) * 2.0;
+    double curved = (scaled >= 0 ? 1.0 : -1.0) * pow(SDL_fabs(scaled), 3.0);
+    return (short) (curved * 32767.0);
 }

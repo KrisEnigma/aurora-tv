@@ -548,6 +548,15 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
     /* Resume only when reconnecting to the same app already running on the host.
      * Switching apps (e.g. game -> Desktop) must use launch, not resume. */
     bool reconnect_same_app = server->currentGame != 0 && server->currentGame == appId;
+    /* Sunshine forks (Vibepollo/Apollo): use launch when HDR is requested so the host
+     * reconfigures virtual display and HDR profile. Resume can leave stale state after
+     * Desktop <-> game switches or RTX HDR profile changes. */
+    if (!is_gfe && (config->supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT)) {
+        if (reconnect_same_app) {
+            commons_log_info("GameStream", "Forcing launch (not resume) for HDR stream on Sunshine host");
+        }
+        reconnect_same_app = false;
+    }
 
     if (reconnect_same_app) {
         gs_set_timeout(hnd, 120);
@@ -619,6 +628,24 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
         append_params_raw(url, sizeof(url), LiGetLaunchUrlQueryParameters());
     }
 
+    {
+        char log_url[4096];
+        strncpy(log_url, url, sizeof(log_url) - 1);
+        log_url[sizeof(log_url) - 1] = '\0';
+        char *rikey = strstr(log_url, "rikey=");
+        if (rikey != NULL) {
+            char *val = rikey + 6;
+            char *next = strchr(val, '&');
+            if (next != NULL) {
+                size_t tail = strlen(next) + 1;
+                memmove(val + 8, next, tail);
+            }
+            memcpy(val, "REDACTED", 8);
+            val[8] = '\0';
+        }
+        commons_log_info("GameStream", "Launch URL: %s", log_url);
+    }
+
     if ((ret = http_request(hnd->http, url, data)) == GS_OK) {
         server->currentGame = appId;
     } else {
@@ -626,6 +653,11 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
     }
 
     if ((ret = xml_status(data->memory, data->size) != GS_OK)) {
+        if (data->memory != NULL && data->size > 0) {
+            size_t snippet_len = data->size < 512 ? data->size : 512;
+            commons_log_error("GameStream", "Launch failed, XML response (first %zu bytes): %.*s", snippet_len,
+                              (int) snippet_len, data->memory);
+        }
         goto cleanup;
     }
     if ((ret = xml_search_ex(data->memory, data->size, "gamesession", true, &result)) != GS_OK &&

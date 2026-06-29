@@ -208,6 +208,27 @@ The buildroot-nc4 SDK includes pbnjson_c, PmLogLib, webosi18n, etc. If something
 
 If blockiness or color smearing builds up over time with **H.265** streams, try **Settings → Video → Periodic decoder refresh (HEVC)** (interval 10–30 s). This only applies when HEVC is active; it has no effect on H.264-only streams.
 
+### Streaming over Tailscale
+
+Aurora does not bundle a Tailscale client on the TV. To reach a PC over Tailscale:
+
+1. Install and sign in to **Tailscale** on your PC (Sunshine/Vibepollo host).
+2. Note the PC's Tailscale IP (usually `100.x.x.x`) or MagicDNS name from the Tailscale admin console.
+3. In Aurora, **Add host** manually and enter that IP (port **47989** for HTTP discovery, or the port shown in your host settings).
+4. Pair and stream as on the local LAN.
+
+The TV and PC do not need to be on the same physical network, but both must reach each other through your tailnet.
+
+### NDL low-latency build (optional, QNED / webOS 7+)
+
+For TVs using the **NDL** decoder (not SMP on C1/C2), you can enable reduced A/V buffering at build time:
+
+```bash
+WEBOS_NDL_LOW_LATENCY=1 ./scripts/webos/build_for_lg.sh
+```
+
+This sets video/audio PTS to zero in the NDL driver. Test on your model before daily use; some sets may show A/V drift.
+
 ---
 
 ## 5. HID Passthrough (Experimental)

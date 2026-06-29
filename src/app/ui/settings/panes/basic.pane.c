@@ -126,9 +126,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     pane->bitrate_label = pref_title_label(view, locstr("Video bitrate"));
 
-    /* User-facing slider cap. Set to 400 Mbps for high-end Sunshine setups; the SMP driver
-     * advertises a matching maxBitrate so session.c will not silently clamp this value. */
-    unsigned int max = 400000;
+    /* User-facing slider cap. Default max 300 Mbps for stable streaming on webOS. */
+    unsigned int max = 300000;
     lv_obj_t *bitrate_slider = pref_slider(view, &app_configuration->stream.bitrate, 5000, (int) max, BITRATE_STEP);
     lv_obj_set_width(bitrate_slider, LV_PCT(100));
     lv_obj_add_event_cb(bitrate_slider, on_bitrate_changed, LV_EVENT_VALUE_CHANGED, self);

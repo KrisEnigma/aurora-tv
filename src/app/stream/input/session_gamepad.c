@@ -208,6 +208,7 @@ void stream_input_handle_caxis(stream_input_t *input, const SDL_ControllerAxisEv
 
     if (vmouse_intercepted(input, gamepad)) {
         vmouse_set_vector(&input->vmouse, gamepad->rightStickX, gamepad->rightStickY);
+        vmouse_set_scroll(&input->vmouse, gamepad->leftStickX, gamepad->leftStickY);
         vmouse_set_trigger(&input->vmouse, gamepad->leftTrigger, gamepad->rightTrigger);
     }
 
@@ -217,7 +218,7 @@ void stream_input_handle_caxis(stream_input_t *input, const SDL_ControllerAxisEv
 
     if (vmouse_intercepted(input, gamepad)) {
         LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons, 0, 0,
-                                   gamepad->leftStickX, gamepad->leftStickY, 0, 0);
+                                   0, 0, 0, 0);
     } else {
         LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons,
                                    gamepad->leftTrigger,
@@ -471,8 +472,8 @@ static bool vmouse_intercepted(stream_input_t *input, const app_gamepad_state_t 
     if (!session_input_is_vmouse_active(&input->vmouse)) {
         return false;
     }
-    return gamepad->rightStickX != 0 || gamepad->rightStickY != 0 || gamepad->leftTrigger != 0 ||
-           gamepad->rightTrigger != 0;
+    return gamepad->rightStickX != 0 || gamepad->rightStickY != 0 || gamepad->leftStickX != 0 ||
+           gamepad->leftStickY != 0 || gamepad->leftTrigger != 0 || gamepad->rightTrigger != 0;
 }
 
 static bool filter_deadzone_2axis(stream_input_t *input, short *x, short *y) {

@@ -9,7 +9,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 - **AMOLED layout** — pure black background (`#000000`), dark surfaces, and violet accent; launcher, game grid, and settings popups share the same theme.
 - **3.6K resolution (3584×2016)** — option between 2K and 4K; ~90% of 4K pixel area with less load on the TV decoder and lower input lag than native 4K on recent models.
 - **HDR10 (PQ)** over HEVC Main10 or AV1 Main10 (when supported).
-- Up to **400 Mbps** on the bitrate slider (UI maximum); practical guidance below.
+- Up to **300 Mbps** on the bitrate slider (UI maximum); practical guidance below.
 
 ## Recommended settings (LG OLED)
 
@@ -49,8 +49,8 @@ Hold the buttons together, then **release all at once** to trigger (same pattern
 **Virtual mouse** must be enabled first in **Settings → Input → Virtual mouse**. When active:
 
 - **Right stick** — move the cursor
+- **Left stick** — scroll the page (vertical and horizontal, with acceleration)
 - **LT / RT** — left / right mouse button
-- **Left stick click (LS)** — scroll mode (vertical wheel)
 
 These combos work without opening the overlay. **HID Passthrough** disables standard Moonlight gamepad emulation, so hotkeys may not apply in that mode.
 

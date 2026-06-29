@@ -23,6 +23,7 @@ if [ ! -f arm-webos-linux-gnueabi_sdk-buildroot.tar.gz ]; then
     curl -sL -O https://github.com/openlgtv/buildroot-nc4/releases/download/webos-b17b4cc/arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
 fi
 tar -xzf arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
+find arm-webos-linux-gnueabi_sdk-buildroot -type f \( -name '*.sh' -o -name 'relocate-sdk' \) -exec sed -i 's/\r$//' {} +
 ./arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
 
 cd /build
@@ -39,4 +40,5 @@ fi
 # Build outside the Windows bind mount: cmake try_compile breaks on NTFS/exFAT volumes.
 export CMAKE_BINARY_DIR=/tmp/aurora-webos-build
 rm -rf "${CMAKE_BINARY_DIR}"
-CI=1 ./scripts/webos/easy_build.sh -DCMAKE_BUILD_TYPE=Release
+CI=1 sed 's/\r$//' ./scripts/webos/apply_ndl_low_latency.sh | bash
+CI=1 sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release

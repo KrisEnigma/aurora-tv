@@ -22,6 +22,7 @@ typedef struct session_input_vmouse_t {
     struct {
         bool active;
         short x, y;
+        short scroll_x, scroll_y;
         bool l, r;
         bool modifier;
     } state;

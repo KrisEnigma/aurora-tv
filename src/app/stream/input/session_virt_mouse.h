@@ -10,6 +10,10 @@ bool session_input_is_vmouse_active(session_input_vmouse_t *vmouse);
 
 void vmouse_set_vector(session_input_vmouse_t *vmouse, short x, short y);
 
+void vmouse_set_scroll(session_input_vmouse_t *vmouse, short x, short y);
+
 void vmouse_set_trigger(session_input_vmouse_t *vmouse, char l, char r);
 
 void vmouse_set_modifier(session_input_vmouse_t *vmouse, bool v);
+
+void vmouse_update_timer(session_input_vmouse_t *vmouse);

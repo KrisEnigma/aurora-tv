@@ -42,6 +42,12 @@ static unsigned char *buffer = NULL;
 static size_t buffer_size = 0;
 static size_t buffer_initial_size = 0;
 static int lastFrameNumber;
+// Set when SS4S_PlayerVideoFeed returns NOT_READY (decoder is in an
+// exclusive op like HDR toggle or resolution change). Consumed on the
+// next successful Feed: we ask Limelight for one IDR so the decoder
+// can resync from a known-good keyframe instead of decoding the next
+// P-frame against a discontinuity.
+static bool need_idr_on_resume = false;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
@@ -127,6 +133,7 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     vdec_stream_format = videoFormat;
     vdec_stream_info.format = video_format_name(videoFormat);
     lastFrameNumber = 0;
+    need_idr_on_resume = false;
     frames_since_idr = 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
@@ -277,9 +284,16 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
         }
         vdec_temp_stats.totalSubmitTime += LiGetMillis() - decodeUnit->enqueueTimeMs;
         vdec_temp_stats.submittedFrames++;
+        if (need_idr_on_resume) {
+            need_idr_on_resume = false;
+            return DR_NEED_IDR;
+        }
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
         return DR_NEED_IDR;
+    } else if (result == SS4S_VIDEO_FEED_NOT_READY) {
+        need_idr_on_resume = true;
+        return DR_OK;
     } else {
         commons_log_error("Session", "Video feed error %d", result);
         session_interrupt(session, false, STREAMING_INTERRUPT_DECODER);

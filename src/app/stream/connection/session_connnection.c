@@ -89,6 +89,7 @@ static void connection_set_hdr(bool hdrEnabled) {
     if (!current_session) {
         return;
     }
+    commons_log_info("Session", "Host HDR signal: %s", hdrEnabled ? "enabled" : "disabled");
     streaming_set_hdr(current_session, hdrEnabled);
 }
 

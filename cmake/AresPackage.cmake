@@ -18,5 +18,6 @@ execute_process(COMMAND ${GEN_MANIFEST} -p "${CPACK_PACKAGE_DIRECTORY}/${CPACK_P
         -o "${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_NAME}.manifest.json"
         -i "https://raw.githubusercontent.com/GuiDev1994/aurora-tv/main/deploy/webos/icon.png"
         -l "https://github.com/GuiDev1994/aurora-tv"
+        -r false
         COMMAND_ERROR_IS_FATAL ANY
 )

@@ -2,9 +2,6 @@ name: Build (Steam Link)
 
 on:
   push:
-    # Don't run for tags
-    tags-ignore:
-      - 'v*.*.*'
     branches:
       - '**'
 env:

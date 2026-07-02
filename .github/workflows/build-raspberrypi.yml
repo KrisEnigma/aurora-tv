@@ -2,9 +2,6 @@ name: Build (Raspberry Pi)
 
 on:
   push:
-    # Don't run for tags
-    tags-ignore:
-      - 'v*.*.*'
     branches:
       - '**'
 env:

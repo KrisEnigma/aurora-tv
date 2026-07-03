@@ -8,7 +8,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 - **AMOLED layout** — pure black background, dark surfaces, violet accent.
 - **3.6K (3584×2016)** — between 2K and 4K; strong quality with less decoder load than native 4K.
-- **HDR10 (PQ)** over HEVC Main10 or AV1 Main10 (when supported).
+- **HDR10 (PQ)** over HEVC Main10 (when supported).
 - Up to **300 Mbps** bitrate; **~270 Mbps** is a practical ceiling on stable 5 GHz Wi‑Fi for 3.6K HDR 120 Hz.
 - **Performance stats overlay**, **full on-screen keyboard**, and **virtual mouse** during streaming.
 
@@ -30,7 +30,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 |---------|------------|
 | Resolution | **3.6K** (3584×2016) |
 | FPS | 60 or 120 |
-| Codec | HEVC; AV1 when available |
+| Codec | HEVC (H.265) |
 | Bitrate | Start at **120–180 Mbps**; raise toward **~270 Mbps** on a stable link |
 
 ## Streaming controls
@@ -46,13 +46,6 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 Full keyboard: **RB + RS**, overlay menu, or Magic Remote **BLUE**. Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
 
 Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUILD_WEBOS.md).
-
-## CTM integration
-
-Aurora includes an optional **[CTM-USBIP](https://github.com/CTM-Bridge/CTM-USBIP)** integration for HID passthrough. Setup and usage are documented in the project:
-
-- [HID Passthrough (webOS)](docs/BUILD_WEBOS.md#5-hid-passthrough-experimental)
-- [CTM-USBIP host build](docs/CTM_USBIP.md)
 
 ## Install
 

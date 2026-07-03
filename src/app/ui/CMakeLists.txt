@@ -18,7 +18,4 @@ target_sources(moonlight-lib PRIVATE
         help/help.dialog.c
         common/progress_dialog.c
         )
-if (TARGET_WEBOS)
-    target_sources(moonlight-lib PRIVATE streaming/hid_passthrough_panel.c)
-endif()
 add_subdirectory(settings)

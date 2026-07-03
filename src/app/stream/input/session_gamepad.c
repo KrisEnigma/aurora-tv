@@ -11,12 +11,6 @@
 #include "stream/input/session_virt_mouse.h"
 #include "logging.h"
 
-#if defined(TARGET_WEBOS)
-#include "hid_passthrough/hid_pt_gamepad_match.h"
-#include "hid_passthrough/hid_pt_device_prefs.h"
-#include "hid_passthrough/hid_passthrough_manager.h"
-#endif
-
 #define QUIT_BUTTONS (PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG)
 #define GAMEPAD_COMBO_VMOUSE (LB_FLAG | RS_CLK_FLAG)
 #define GAMEPAD_COMBO_KEYBOARD (RB_FLAG | RS_CLK_FLAG)
@@ -42,24 +36,13 @@ static void stream_input_send_unannounced_gamepads(stream_input_t *input);
 
 static bool stream_input_gamepad_sends_moonlight(const stream_input_t *input,
                                                  const app_gamepad_state_t *gamepad) {
-    if (input->view_only || gamepad == NULL) {
-        return false;
-    }
-#if defined(TARGET_WEBOS)
-    return !hid_pt_gamepad_is_moonlight_excluded(input, gamepad);
-#else
     (void) input;
-    return !input->hid_passthrough;
-#endif
+    return !input->view_only && gamepad != NULL;
 }
 
 static uint16_t stream_input_moonlight_active_mask(const stream_input_t *input)
 {
-    uint16_t mask = (uint16_t) input->input->activeGamepadMask;
-#if defined(TARGET_WEBOS)
-    mask &= ~input->moonlightExcludedMask;
-#endif
-    return mask;
+    return (uint16_t) input->input->activeGamepadMask;
 }
 
 void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButtonEvent *event) {
@@ -344,16 +327,6 @@ void stream_input_handle_jdevice(stream_input_t *input, const SDL_JoyDeviceEvent
         if (gamepad == NULL || input->view_only) {
             return;
         }
-#if defined(TARGET_WEBOS)
-        if (hid_pt_prefs_auto_plugin_for_gamepad(gamepad)) {
-            hid_passthrough_manager_t *mgr = session_get_hid_passthrough(input->session);
-            if (mgr != NULL && hid_passthrough_manager_active(mgr)) {
-                hid_passthrough_manager_rescan(mgr);
-                hid_passthrough_manager_reconcile(mgr, input);
-            }
-            return;
-        }
-#endif
         stream_input_send_gamepad_arrive(input, gamepad);
 #else
         stream_input_send_unannounced_gamepads(input);
@@ -464,11 +437,6 @@ static void stream_input_send_unannounced_gamepads(stream_input_t *input) {
         if (gamepad == NULL) {
             continue;
         }
-#if defined(TARGET_WEBOS)
-        if (input->moonlightExcludedMask & (1u << gamepad->gs_id)) {
-            continue;
-        }
-#endif
         stream_input_send_gamepad_arrive(input, gamepad);
     }
 }

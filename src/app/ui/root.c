@@ -9,7 +9,6 @@
 
 #include "stream/session.h"
 #include "stream/input/session_input.h"
-#include "hid_passthrough/hid_passthrough_manager.h"
 
 #include "streaming/streaming.controller.h"
 #include "launcher/launcher.controller.h"
@@ -50,43 +49,6 @@ SDL_Window *app_ui_create_window(app_ui_t *ui);
 static void session_error();
 
 static void session_error_dialog_cb(lv_event_t *event);
-
-#if defined(TARGET_WEBOS)
-/* Drives HID-passthrough auto-plug for the whole stream: rescans attached
- * devices on a cadence and bridges any recognized controller that is not yet
- * plugged. This is what makes a DualSense connected at stream start — or paired
- * over Bluetooth mid-game — get passed through without opening the HID overlay.
- * Lives on the LVGL/main thread (lv_timer), the same thread as the panel and all
- * plug operations, so the device model needs no locking. */
-#define HID_AUTOPLUG_POLL_MS 1000
-static lv_timer_t *hid_autoplug_timer = NULL;
-
-static void hid_autoplug_timer_cb(lv_timer_t *timer) {
-    app_t *app = timer->user_data;
-    if (app == NULL || app->session == NULL) {
-        return;
-    }
-    hid_passthrough_manager_t *mgr = session_get_hid_passthrough(app->session);
-    if (mgr != NULL) {
-        hid_passthrough_manager_poll(mgr);
-    }
-}
-
-static void hid_autoplug_timer_stop(void) {
-    if (hid_autoplug_timer != NULL) {
-        lv_timer_del(hid_autoplug_timer);
-        hid_autoplug_timer = NULL;
-    }
-}
-
-static void hid_autoplug_timer_start(app_t *app) {
-    hid_autoplug_timer_stop();
-    hid_passthrough_manager_t *mgr = session_get_hid_passthrough(app->session);
-    if (mgr != NULL && hid_passthrough_manager_active(mgr)) {
-        hid_autoplug_timer = lv_timer_create(hid_autoplug_timer_cb, HID_AUTOPLUG_POLL_MS, app);
-    }
-}
-#endif
 
 void app_ui_init(app_ui_t *ui, app_t *app) {
     ui->app = app;
@@ -229,20 +191,12 @@ bool ui_dispatch_userevent(app_t *app, int which, void *data1, void *data2) {
                 if (session_start_input(app->session)) {
                     app_set_mouse_grab(&app->input, true);
                 }
-#if defined(TARGET_WEBOS)
-                /* Begin auto-plugging connected/hotplugged controllers for the
-                 * duration of this stream (no-op unless hid_passthrough is on). */
-                hid_autoplug_timer_start(app);
-#endif
                 app_set_keep_awake(app, true);
                 streaming_enter_fullscreen(app->session);
                 last_pts = 0;
                 return true;
             }
             case USER_STREAM_CLOSE: {
-#if defined(TARGET_WEBOS)
-                hid_autoplug_timer_stop();
-#endif
                 if (app->ss4s.video_cap.transform & SS4S_VIDEO_CAP_TRANSFORM_UI_EXCLUSIVE) {
                     SDL_ShowCursor(SDL_TRUE);
                 } else {
@@ -263,11 +217,6 @@ bool ui_dispatch_userevent(app_t *app, int which, void *data1, void *data2) {
                 return true;
             }
             case USER_STREAM_FINISHED: {
-#if defined(TARGET_WEBOS)
-                /* Terminal event for every teardown (posted just before the session
-                 * is destroyed) — make sure the poll timer never outlives it. */
-                hid_autoplug_timer_stop();
-#endif
                 if (streaming_errno != 0) {
                     session_error();
                     break;
@@ -289,11 +238,7 @@ bool ui_dispatch_userevent(app_t *app, int which, void *data1, void *data2) {
 }
 
 bool ui_should_block_input() {
-#if defined(TARGET_WEBOS)
-    return streaming_overlay_shown() || streaming_soft_keyboard_shown() || streaming_hid_panel_shown();
-#else
     return streaming_overlay_shown() || streaming_soft_keyboard_shown();
-#endif
 }
 
 void ui_display_size(app_ui_t *ui, int width, int height) {

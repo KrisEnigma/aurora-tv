@@ -1,10 +1,6 @@
 #include "app_settings.h"
 #include "config.h"
 
-#if defined(TARGET_WEBOS)
-#include "hid_passthrough/hid_pt_device_prefs.h"
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -133,18 +129,12 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->force_full_color_range = false;
     config->hevc = true;
     config->idr_refresh_interval_sec = 0;
-    config->av1 = false;
     config->show_stats_on_start = false;
     config->show_stats_compact = false;
     config->stick_deadzone = 7;
     config->client_refresh_rate_x100 = 0;
-    config->hid_passthrough = false;
-    config->hid_passthrough_port = 48054;
-    config->hid_passthrough_autoplug = true;
-
-#if defined(TARGET_WEBOS)
-    hid_pt_prefs_init();
-#endif
+    config->auto_adjust_bitrate = false;
+    config->abr_mode = 0;
 
 #if defined(TARGET_WEBOS)
     settings_apply_ntsc_preset_refresh(config, config->stream.fps);
@@ -184,6 +174,8 @@ bool settings_save(app_settings_t *config) {
     ini_write_int(fp, "bitrate", config->stream.bitrate);
     ini_write_int(fp, "packetsize", config->stream.packetSize);
     ini_write_int(fp, "rotate", config->rotate);
+    ini_write_bool(fp, "auto_adjust_bitrate", config->auto_adjust_bitrate);
+    ini_write_int(fp, "abr_mode", config->abr_mode);
 
     ini_write_section(fp, "host");
     ini_write_bool(fp, "sops", config->sops);
@@ -201,9 +193,6 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "swap_abxy", config->swap_abxy);
     ini_write_int(fp, "stick_deadzone", config->stick_deadzone);
     ini_write_bool(fp, "syskey_capture", config->syskey_capture);
-    ini_write_bool(fp, "hid_passthrough", config->hid_passthrough);
-    ini_write_int(fp, "hid_passthrough_port", config->hid_passthrough_port);
-    ini_write_bool(fp, "hid_passthrough_autoplug", config->hid_passthrough_autoplug);
 
     ini_write_section(fp, "video");
     ini_write_string(fp, "decoder", config->decoder);
@@ -211,7 +200,6 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "force_full_color_range", config->force_full_color_range);
     ini_write_bool(fp, "hevc", config->hevc);
     ini_write_int(fp, "idr_refresh_interval_sec", config->idr_refresh_interval_sec);
-    ini_write_bool(fp, "av1", config->av1);
     ini_write_bool(fp, "show_stats_on_start", config->show_stats_on_start);
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
     ini_write_int(fp, "client_refresh_rate_x100", config->client_refresh_rate_x100);
@@ -230,14 +218,6 @@ bool settings_save(app_settings_t *config) {
         ini_write_int(fp, "width", config->window_state.w);
         ini_write_int(fp, "height", config->window_state.h);
     }
-
-#if defined(TARGET_WEBOS)
-    /* settings_save() truncates and rewrites the whole ini from known fields, so
-     * without this the per-device HID auto-plug prefs written by
-     * hid_pt_prefs_flush() are silently dropped on the next full save (e.g. app
-     * exit) — the DualSense would then fail to auto-bridge on the next launch. */
-    hid_pt_prefs_write_section(fp);
-#endif
 
     return fclose(fp) == 0;
 }
@@ -298,11 +278,6 @@ int find_ch_idx_by_value(const char *value) {
 }
 
 static int settings_parse(app_settings_t *config, const char *section, const char *name, const char *value) {
-#if defined(TARGET_WEBOS)
-    if (hid_pt_prefs_ini_handler(section, name, value)) {
-        return 1;
-    }
-#endif
     if (INI_FULL_MATCH("streaming", "width")) {
         set_int(&config->stream.width, value);
     } else if (INI_FULL_MATCH("streaming", "height")) {
@@ -315,6 +290,13 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         set_int(&config->stream.packetSize, value);
     } else if (INI_FULL_MATCH("streaming", "rotate")) {
         set_int(&config->rotate, value);
+    } else if (INI_FULL_MATCH("streaming", "auto_adjust_bitrate")) {
+        config->auto_adjust_bitrate = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("streaming", "abr_mode")) {
+        set_int(&config->abr_mode, value);
+        if (config->abr_mode < 0 || config->abr_mode > 2) {
+            config->abr_mode = 0;
+        }
     } else if (INI_FULL_MATCH("video", "idr_refresh_interval_sec")) {
         set_int(&config->idr_refresh_interval_sec, value);
         if (config->idr_refresh_interval_sec < 0) {
@@ -326,8 +308,6 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         }
     } else if (INI_NAME_MATCH("hevc")) {
         config->hevc = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "av1")) {
-        config->av1 = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "video_simple_sdp")) {
         /* Legacy: ignored; client always negotiates RFI + slices when applicable. */
     } else if (INI_FULL_MATCH("video", "presentation_offset_ms")) {
@@ -378,15 +358,6 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         config->swap_abxy = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("syskey_capture")) {
         config->syskey_capture = INI_IS_TRUE(value);
-    } else if (INI_NAME_MATCH("hid_passthrough")) {
-        config->hid_passthrough = INI_IS_TRUE(value);
-    } else if (INI_NAME_MATCH("hid_passthrough_autoplug")) {
-        config->hid_passthrough_autoplug = INI_IS_TRUE(value);
-    } else if (INI_NAME_MATCH("hid_passthrough_port")) {
-        set_int(&config->hid_passthrough_port, value);
-        if (config->hid_passthrough_port <= 0 || config->hid_passthrough_port > 65535) {
-            config->hid_passthrough_port = 48054;
-        }
     } else if (INI_FULL_MATCH("video", "decoder")) {
         set_string(&config->decoder, value);
     } else if (INI_FULL_MATCH("audio", "backend")) {

@@ -38,8 +38,6 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
     input->pointerGestureStartX = 0;
     input->pointerGestureStartY = 0;
     input->view_only = config->view_only;
-    input->hid_passthrough = config->hid_passthrough;
-    input->moonlightExcludedMask = 0;
     input->stick_deadzone = config->stick_deadzone;
     input->no_sdl_mouse = config->hardware_mouse;
 #if FEATURE_INPUT_EVMOUSE
@@ -75,11 +73,6 @@ void session_input_started(stream_input_t *input) {
         if (gamepad == NULL) {
             continue;
         }
-#if defined(TARGET_WEBOS)
-        if (input->moonlightExcludedMask & (1u << gamepad->gs_id)) {
-            continue;
-        }
-#endif
         stream_input_send_gamepad_arrive(input, gamepad);
     }
 }
@@ -88,7 +81,6 @@ void session_input_stopped(stream_input_t *input) {
     pointer_gesture_reset(input);
     input->started = false;
     input->announcedGamepadMask = 0;
-    input->moonlightExcludedMask = 0;
     input->remoteOkPressed = false;
     input->remoteOkPressedAt = 0;
     input->remoteOkModifiers = 0;

@@ -78,19 +78,11 @@ DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks = {
 void session_video_prepare_stream(void) {
     int caps = CAPABILITY_DIRECT_SUBMIT;
     const bool hevc = app_configuration != NULL && app_configuration->hevc;
-    const bool av1 = app_configuration != NULL && app_configuration->av1;
     if (hevc) {
         caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC;
-    }
-    if (av1) {
-        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
-    }
-    if (hevc || av1) {
         caps |= CAPABILITY_SLICES_PER_FRAME(VDEC_STREAM_SLICES_PER_FRAME);
-    }
-    if (hevc || av1) {
-        commons_log_info("Session", "Video SDP caps: RFI + %u slices/frame (HEVC=%d AV1=%d)",
-                         (unsigned) VDEC_STREAM_SLICES_PER_FRAME, hevc ? 1 : 0, av1 ? 1 : 0);
+        commons_log_info("Session", "Video SDP caps: RFI + %u slices/frame (HEVC=1)",
+                         (unsigned) VDEC_STREAM_SLICES_PER_FRAME);
     } else {
         commons_log_info("Session", "Video SDP caps: direct submit only (H.264)");
     }
@@ -241,7 +233,7 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
     vdec_temp_stats.receivedBytes += (uint64_t) decodeUnit->fullLength;
 
     vdec_temp_stats.totalCaptureLatency += decodeUnit->frameHostProcessingLatency;
-    vdec_temp_stats.totalReassemblyTime += decodeUnit->enqueueTimeMs - decodeUnit->receiveTimeMs;
+    vdec_temp_stats.totalReassemblyTime += (uint32_t) ((decodeUnit->enqueueTimeUs - decodeUnit->receiveTimeUs) / 1000);
     vdec_stream_info.has_host_latency |= decodeUnit->frameHostProcessingLatency > 0;
     if (!vdec_warned_near_buffer_limit && buffer_initial_size > 0 &&
         (size_t) decodeUnit->fullLength > (buffer_initial_size * 9 / 10)) {
@@ -282,7 +274,7 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
         if (vdec_stream_info.width == 0 || vdec_stream_info.height == 0) {
             stream_info_parse_size(decodeUnit, &vdec_stream_info);
         }
-        vdec_temp_stats.totalSubmitTime += LiGetMillis() - decodeUnit->enqueueTimeMs;
+        vdec_temp_stats.totalSubmitTime += LiGetMillis() - (unsigned long) (decodeUnit->enqueueTimeUs / 1000);
         vdec_temp_stats.submittedFrames++;
         if (need_idr_on_resume) {
             need_idr_on_resume = false;

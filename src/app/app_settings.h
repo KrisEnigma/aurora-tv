@@ -48,16 +48,11 @@ typedef struct app_settings_t {
     bool virtual_mouse;
     bool swap_abxy;
     bool syskey_capture;
-    bool hid_passthrough;
-    int hid_passthrough_port;
-    bool hid_passthrough_autoplug;   /* auto-bridge connected game controllers on stream start + BT hotplug */
-    bool hdr;   /* HDR10 (PQ) over HEVC Main10 or AV1 Main10 when host and decoder support it */
+    bool hdr;   /* HDR10 (PQ) over HEVC Main10 when host and decoder support it */
     bool force_full_color_range; /* SDR only: request full-range YUV (0-255) from host. No effect when HDR is on. */
     bool hevc;
     /** Periodic HEVC IDR refresh interval in seconds (0 = off, min 2 when enabled). */
     int idr_refresh_interval_sec;
-    /** Sunshine: negotiate AV1 Main8/Main10 when decoder exposes SS4S_VIDEO_AV1. */
-    bool av1;
     bool show_stats_on_start;
     bool show_stats_compact;
     int stick_deadzone;
@@ -66,6 +61,8 @@ typedef struct app_settings_t {
      * 0 = omit (host default frame pacing).
      */
     int client_refresh_rate_x100;
+    bool auto_adjust_bitrate;
+    int abr_mode;
     char *conf_dir;
     char *ini_path;
     char *condb_path;

@@ -26,6 +26,7 @@ typedef struct launcher_fragment_t {
     lv_obj_t *nav;
     /* Detail area below the top bar; full width, hosts the apps fragment (game rail). */
     lv_obj_t *detail;
+    lv_obj_t *profile_dropdown;
 
     /* Server selector button shown in the top bar. Click opens the server popup
      * (full PC list with status icons, long-press for context menu). The label

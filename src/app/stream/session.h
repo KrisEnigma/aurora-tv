@@ -63,9 +63,8 @@ typedef struct session_config_t {
     bool hardware_mouse;
     bool vmouse;
     uint8_t stick_deadzone;
-    bool hid_passthrough;
-    int hid_passthrough_port;
-    bool hid_passthrough_autoplug;
+    bool auto_adjust_bitrate;
+    int abr_mode;
 } session_config_t;
 
 extern int streaming_errno;
@@ -101,15 +100,6 @@ void session_screen_keyboard_opened(session_t *session);
 void session_screen_keyboard_closed(session_t *session);
 
 bool session_accepting_input(session_t *session);
-
-#if defined(TARGET_WEBOS)
-struct hid_passthrough_manager;
-typedef struct hid_passthrough_manager hid_passthrough_manager_t;
-
-hid_passthrough_manager_t *session_get_hid_passthrough(session_t *session);
-
-void session_ensure_hid_passthrough(session_t *session);
-#endif
 
 void streaming_display_size(session_t *session, short width, short height);
 

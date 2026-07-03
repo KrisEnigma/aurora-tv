@@ -44,8 +44,6 @@ typedef struct stream_input_t {
     int pointerGestureStartX;
     int pointerGestureStartY;
     bool view_only, no_sdl_mouse;
-    bool hid_passthrough;
-    uint16_t moonlightExcludedMask;
     uint8_t stick_deadzone;
     session_input_vmouse_t vmouse;
 #if FEATURE_INPUT_EVMOUSE

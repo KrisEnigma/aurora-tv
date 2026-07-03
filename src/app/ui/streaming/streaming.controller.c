@@ -2,7 +2,6 @@
 #include "app_session.h"
 #include "streaming.controller.h"
 #include "soft_keyboard.h"
-#include "hid_passthrough_panel.h"
 
 #include <SDL.h>
 #include "stream/video/session_video.h"
@@ -20,13 +19,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(TARGET_WEBOS)
-#include <fcntl.h>
-#include <unistd.h>
-#include <poll.h>
-#include "hid_passthrough/hid_passthrough_manager.h"
-#endif
-
 static void exit_streaming(lv_event_t *event);
 
 static void suspend_streaming(lv_event_t *event);
@@ -34,10 +26,6 @@ static void suspend_streaming(lv_event_t *event);
 static void open_keyboard(lv_event_t *event);
 
 static void toggle_vmouse(lv_event_t *event);
-
-static void open_hid_devices(lv_event_t *event);
-
-static void hid_panel_close_cb(void *userdata);
 
 static void stream_fragment_del_timer_cb(lv_timer_t *timer);
 
@@ -133,65 +121,6 @@ static float streaming_render_fps(float decodedFps) {
     return renderFps;
 }
 
-static void network_test_timer_cb(lv_timer_t *timer) {
-    streaming_controller_t *controller = (streaming_controller_t *) timer->user_data;
-    if (!controller) {
-        return;
-    }
-    if (controller->network_test_timer) {
-        lv_timer_del(controller->network_test_timer);
-        controller->network_test_timer = NULL;
-    }
-
-    const VIDEO_STATS *dst = &vdec_summary_stats;
-    const VIDEO_INFO *info = &vdec_stream_info;
-    (void) info;
-
-    uint32_t measuredBps = dst->currentBitrateKbps;
-    float dropPct = 0.0f;
-    if (dst->totalFrames > 0) {
-        dropPct = (float) dst->networkDroppedFrames * 100.0f / (float) dst->totalFrames;
-    }
-
-    char body[256];
-    if (measuredBps == 0) {
-        snprintf(body, sizeof(body),
-                 "%s\n\n%s",
-                 locstr("Network speed test could not gather enough data."),
-                 locstr("Check your connection and try again."));
-    } else {
-        /* Convert to Mbps and apply a ~20% safety margin */
-        float measuredMbps = (float) measuredBps / 1000000.0f;
-        float recommendedMbps = measuredMbps * 0.8f;
-        snprintf(body, sizeof(body),
-                 "%s\n\n"
-                 "%s: %.1f Mbps\n"
-                 "%s: %.1f Mbps\n"
-                 "%s: %u ms\n"
-                 "%s: %.2f%%",
-                 locstr("Network speed test finished."),
-                 locstr("Measured throughput"), measuredMbps,
-                 locstr("Recommended max bitrate"), recommendedMbps,
-                 locstr("Network RTT (avg)"), dst->rtt,
-                 locstr("Network frame drop"), dropPct);
-    }
-
-    static const char *btns[] = { "OK", "" };
-    lv_obj_t *dialog = lv_msgbox_create_i18n(NULL,
-                                             locstr("Network speed test"),
-                                             body,
-                                             btns,
-                                             false);
-    lv_obj_center(dialog);
-
-    /* Encerra o streaming após o teste */
-    if (controller->global && controller->global->session) {
-        session_interrupt(controller->global->session, true, STREAMING_INTERRUPT_USER);
-    }
-}
-
-static void network_test_timer_cb(lv_timer_t *timer);
-
 const lv_fragment_class_t streaming_controller_class = {
         .constructor_cb = constructor,
         .destructor_cb = controller_dtor,
@@ -214,156 +143,16 @@ bool streaming_soft_keyboard_shown() {
     return current_controller != NULL && current_controller->soft_kbd != NULL;
 }
 
-#if defined(TARGET_WEBOS)
-bool streaming_hid_panel_shown() {
-    return current_controller != NULL && current_controller->hid_panel != NULL;
-}
-#endif
-
 bool streaming_stats_shown() {
     return overlay_showing || overlay_pinned;
 }
 
-#if defined(TARGET_WEBOS)
-/* Sony DualSense family — the only controllers whose battery byte lives at the
- * fixed offset decoded below. DS4/Xbox/puck use different layouts, so we skip them. */
-#define DS_VENDOR_SONY  0x054c
-#define DS_PRODUCT_DS5  0x0ce6
-#define DS_PRODUCT_EDGE 0x0df2
-
-/* The DualSense `status` byte sits at offset 52 of the common input-report struct.
- * The report is prefixed by the report id plus, over Bluetooth, a 1-byte seq tag:
- * +2 for BT report 0x31, +1 for USB report 0x01. Returns capacity 0..100 (and the
- * charging nibble), or -1 when the report id/length is not a full DualSense report. */
-static int ds5_parse_battery(const uint8_t *buf, int len, int *charging) {
-    int off;
-    if (buf[0] == 0x31) {
-        off = 2 + 52; /* Bluetooth full report */
-    } else if (buf[0] == 0x01) {
-        off = 1 + 52; /* USB full report */
-    } else {
-        return -1;
-    }
-    if (len <= off) {
-        return -1;
-    }
-    uint8_t status = buf[off];
-    int raw = status & 0x0f;        /* 0..10 capacity, or an error code (>10) */
-    int chg = (status >> 4) & 0x0f; /* 0 discharging, 1 charging, 2 full */
-    if (charging) {
-        *charging = chg;
-    }
-    if (chg == 0x02) {
-        return 100; /* fully charged */
-    }
-    if (raw > 10) {
-        return -1; /* temperature/voltage error code, not a real level */
-    }
-    int pct = raw * 10 + 5;
-    return pct > 100 ? 100 : pct;
-}
-
-/* Read one input report off a bridged DualSense hidraw node and decode its battery.
- * The kernel fans each hidraw report out to every open fd, so this read does NOT
- * steal frames from the usbip passthrough that also holds the node open. */
-static int ds5_read_battery_node(const char *node, int *charging) {
-    int fd = open(node, O_RDONLY | O_NONBLOCK);
-    if (fd < 0) {
-        return -1;
-    }
-    int result = -1;
-    /* DualSense streams ~250 reports/s; poll briefly for a fresh one (~100ms cap). */
-    for (int tries = 0; tries < 8 && result < 0; tries++) {
-        struct pollfd p = {fd, POLLIN, 0};
-        if (poll(&p, 1, 12) <= 0) {
-            continue;
-        }
-        uint8_t buf[96];
-        int n = (int) read(fd, buf, sizeof(buf));
-        if (n <= 0) {
-            continue;
-        }
-        result = ds5_parse_battery(buf, n, charging);
-    }
-    close(fd);
-    return result;
-}
-
-/* Summarize the battery of every bridged DualSense into out, e.g.
- * "75%  ·  40% (charging)" — one entry per controller in device-index order.
- * Returns the number of controllers whose battery was decoded (0 = none). */
-static int ds5_bridged_battery_summary(streaming_controller_t *controller, char *out, size_t outlen) {
-    if (outlen) {
-        out[0] = '\0';
-    }
-    if (!controller->global || !controller->global->session) {
-        return 0;
-    }
-    hid_passthrough_manager_t *mgr = session_get_hid_passthrough(controller->global->session);
-    if (!mgr) {
-        return 0;
-    }
-    int count = hid_passthrough_manager_device_count(mgr);
-    int found = 0;
-    size_t pos = 0;
-    for (int i = 0; i < count; i++) {
-        hid_pt_device_info_t info;
-        if (hid_passthrough_manager_get_device(mgr, i, &info) != 0) {
-            continue;
-        }
-        if (!info.plugged || info.vendor_id != DS_VENDOR_SONY) {
-            continue;
-        }
-        if (info.product_id != DS_PRODUCT_DS5 && info.product_id != DS_PRODUCT_EDGE) {
-            continue;
-        }
-        if (!info.path[0]) {
-            continue;
-        }
-        int chg = 0;
-        int pct = ds5_read_battery_node(info.path, &chg);
-        if (pct < 0) {
-            continue;
-        }
-        const char *suffix = (chg == 0x01) ? " (charging)"
-                           : (chg == 0x02 || pct >= 100) ? " (full)" : "";
-        int w = snprintf(out + pos, outlen - pos, "%s%d%%%s",
-                         found ? "  \xc2\xb7  " : "", pct, suffix);
-        if (w > 0 && (size_t) w < outlen - pos) {
-            pos += (size_t) w;
-        }
-        found++;
-    }
-    return found;
-}
-#endif
-
-/* Refresh the "Controller battery" stat row. The hidraw reads are throttled to once
- * per 10s (battery changes slowly) so reopening the nodes never janks the overlay.
- * Shows every bridged DualSense, e.g. "75%  ·  40% (charging)". */
+/* Refresh the "Controller battery" stat row. */
 static void streaming_refresh_battery(streaming_controller_t *controller) {
     if (!controller->stats_items.battery) {
         return;
     }
-#if defined(TARGET_WEBOS)
-    static uint32_t last_ms = 0;
-    static int initialized = 0;
-    static char text[96];
-    uint32_t now = SDL_GetTicks();
-    if (!initialized || (now - last_ms) >= 10000) {
-        char summary[96];
-        if (ds5_bridged_battery_summary(controller, summary, sizeof summary) <= 0) {
-            snprintf(text, sizeof text, "no controller bridged");
-        } else {
-            snprintf(text, sizeof text, "%s", summary);
-        }
-        last_ms = now;
-        initialized = 1;
-    }
-    lv_label_set_text(controller->stats_items.battery, text);
-#else
     lv_label_set_text(controller->stats_items.battery, "-");
-#endif
 }
 
 bool streaming_refresh_stats() {
@@ -508,9 +297,6 @@ static void constructor(lv_fragment_t *self, void *args) {
 
     const streaming_scene_arg_t *arg = (streaming_scene_arg_t *) args;
     controller->global = arg->global;
-    controller->network_test = arg->network_test;
-    controller->network_test_duration = arg->network_test_duration ? arg->network_test_duration : 10;
-    controller->network_test_timer = NULL;
     if (app_session_begin(arg->global, &arg->uuid, &arg->app) != 0) {
         commons_log_error("Streaming", "Failed to start session");
         lv_async_call((lv_async_cb_t) lv_fragment_del, controller);
@@ -519,15 +305,6 @@ static void constructor(lv_fragment_t *self, void *args) {
 
 static void controller_dtor(lv_fragment_t *self) {
     streaming_controller_t *fragment = (streaming_controller_t *) self;
-    if (fragment->network_test_timer) {
-        lv_timer_del(fragment->network_test_timer);
-        fragment->network_test_timer = NULL;
-    }
-#if defined(TARGET_WEBOS)
-    if (fragment->hid_panel) {
-        hid_panel_close_cb(fragment);
-    }
-#endif
     streaming_styles_reset(fragment);
     if (current_controller == fragment) {
         current_controller = NULL;
@@ -558,16 +335,8 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
             lv_obj_add_flag(controller->overlay, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(controller->hint, LV_OBJ_FLAG_HIDDEN);
 
-            if (app_configuration->show_stats_on_start || controller->network_test) {
+            if (app_configuration->show_stats_on_start) {
                 streaming_set_stats_pinned(controller, true);
-            }
-
-            if (controller->network_test && controller->network_test_timer == NULL) {
-                uint32_t period_ms = (uint32_t) controller->network_test_duration * 1000U;
-                if (period_ms == 0) {
-                    period_ms = 10000U;
-                }
-                controller->network_test_timer = lv_timer_create(network_test_timer_cb, period_ms, controller);
             }
             break;
         }
@@ -583,11 +352,6 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
                 lv_msgbox_close(controller->progress);
                 controller->progress = NULL;
             }
-#if defined(TARGET_WEBOS)
-            if (streaming_hid_panel_shown()) {
-                hid_panel_close_cb(controller);
-            }
-#endif
             if (streaming_errno != 0) {
                 lv_timer_create(stream_fragment_del_timer_cb, 50, controller);
             } else {
@@ -602,12 +366,6 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
         case USER_CLOSE_SOFT_KEYBOARD: {
             if (streaming_soft_keyboard_shown()) {
                 soft_keyboard_close_cb(controller);
-            }
-            return true;
-        }
-        case USER_CLOSE_HID_PANEL: {
-            if (streaming_hid_panel_shown()) {
-                hid_panel_close_cb(controller);
             }
             return true;
         }
@@ -652,11 +410,6 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
     lv_obj_add_event_cb(controller->suspend_btn, suspend_streaming, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->kbd_btn, open_keyboard, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->vmouse_btn, toggle_vmouse, LV_EVENT_CLICKED, self);
-#if defined(TARGET_WEBOS)
-    if (controller->hid_devices_btn) {
-        lv_obj_add_event_cb(controller->hid_devices_btn, open_hid_devices, LV_EVENT_CLICKED, self);
-    }
-#endif
     lv_obj_add_event_cb(controller->base.obj, hide_overlay, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->overlay, overlay_key_cb, LV_EVENT_KEY, controller);
     lv_obj_add_event_cb(controller->base.obj, on_cancel_key, LV_EVENT_CANCEL, controller);
@@ -763,52 +516,11 @@ static void toggle_vmouse(lv_event_t *event) {
     session_toggle_vmouse(app->session);
 }
 
-#if defined(TARGET_WEBOS)
 static void stream_fragment_del_timer_cb(lv_timer_t *timer) {
     lv_fragment_t *fragment = timer->user_data;
     lv_timer_del(timer);
     lv_fragment_del(fragment);
 }
-
-static void hid_panel_close_cb(void *userdata) {
-    streaming_controller_t *controller = userdata;
-    if (!controller || !controller->hid_panel) {
-        return;
-    }
-    lv_group_t *group = hid_passthrough_panel_get_group(controller->hid_panel);
-    if (group) {
-        app_input_remove_modal_group(&controller->global->ui.input, group);
-    }
-    lv_obj_t *panel = controller->hid_panel;
-    controller->hid_panel = NULL;
-    lv_obj_del(panel);
-    lv_indev_reset(NULL, NULL);
-    if (controller->group) {
-        app_input_set_group(&controller->global->ui.input, controller->group);
-    }
-}
-
-static void open_hid_devices(lv_event_t *event) {
-    streaming_controller_t *controller = lv_event_get_user_data(event);
-    if (!controller->global->session || controller->hid_panel) {
-        return;
-    }
-    hide_overlay_impl(controller);
-    controller->hid_panel = hid_passthrough_panel_create(
-            lv_layer_top(),
-            controller->global->session,
-            hid_panel_close_cb,
-            controller);
-    if (!controller->hid_panel) {
-        return;
-    }
-    lv_group_t *group = hid_passthrough_panel_get_group(controller->hid_panel);
-    if (group) {
-        app_input_push_modal_group(&controller->global->ui.input, group);
-    }
-    hid_passthrough_panel_focus_initial(controller->hid_panel);
-}
-#endif
 
 bool show_overlay(streaming_controller_t *controller) {
     if (overlay_showing) {
@@ -829,15 +541,11 @@ bool show_overlay(streaming_controller_t *controller) {
     return true;
 }
 
-/* B/Back: close keyboard or HID panel if shown, else hide overlay */
+/* B/Back: close keyboard if shown, else hide overlay */
 static void on_cancel_key(lv_event_t *event) {
     streaming_controller_t *controller = lv_event_get_user_data(event);
     if (streaming_soft_keyboard_shown()) {
         soft_keyboard_close_cb(controller);
-#if defined(TARGET_WEBOS)
-    } else if (streaming_hid_panel_shown()) {
-        bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
-#endif
     } else {
         hide_overlay(event);
     }
@@ -881,12 +589,6 @@ static void update_buttons_layout(streaming_controller_t *controller) {
     lv_area_center(&coords, &controller->button_points[3]);
     lv_obj_get_coords(controller->kbd_btn, &coords);
     lv_area_center(&coords, &controller->button_points[4]);
-#if defined(TARGET_WEBOS)
-    if (controller->hid_devices_btn) {
-        lv_obj_get_coords(controller->hid_devices_btn, &coords);
-        lv_area_center(&coords, &controller->button_points[5]);
-    }
-#endif
     app_input_set_button_points(&controller->global->ui.input, controller->button_points);
 }
 

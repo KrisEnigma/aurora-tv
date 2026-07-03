@@ -16,7 +16,6 @@
 #include "app_session.h"
 #include "session_worker.h"
 #include "stream/input/session_virt_mouse.h"
-#include "hid_passthrough/hid_passthrough_manager.h"
 
 // Expected luminance values in SEI are in units of 0.0001 cd/m2
 #define LUMINANCE_SCALE 10000
@@ -52,12 +51,6 @@ session_t *session_create(app_t *app, const CONFIGURATION *config, const SERVER_
             session->server->serverInfo.serverCodecModeSupport |= SCM_HEVC_MAIN10;
         }
     }
-    if (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_AV1_MAIN8) {
-        session->server->serverInfo.serverCodecModeSupport |= SCM_AV1_MAIN8;
-    }
-    if (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_AV1_MAIN10) {
-        session->server->serverInfo.serverCodecModeSupport |= SCM_AV1_MAIN10;
-    }
     session->app_id = gs_app->id;
     session->app_name = strdup(gs_app->name);
     session->mutex = SDL_CreateMutex();
@@ -68,7 +61,6 @@ session_t *session_create(app_t *app, const CONFIGURATION *config, const SERVER_
     }
 #endif
     session_input_init(&session->input, session, &app->input, &session->config);
-    hid_passthrough_manager_init(&session->hid_pt);
     SDL_ThreadFunction worker_fn = (SDL_ThreadFunction) session_worker;
 #if FEATURE_EMBEDDED_SHELL
     if (session_use_embedded(session)) {
@@ -88,9 +80,7 @@ stream_input_t *session_get_input(session_t *session) {
 
 void session_destroy(session_t *session) {
     session_interrupt(session, false, STREAMING_INTERRUPT_QUIT);
-    hid_passthrough_manager_stop(&session->hid_pt);
     session_input_deinit(&session->input);
-    hid_passthrough_manager_deinit(&session->hid_pt);
     SDL_WaitThread(session->thread, NULL);
     serverdata_free(session->server);
     SDL_DestroyCond(session->cond);
@@ -156,47 +146,16 @@ bool session_start_input(session_t *session) {
         return false;
     }
 #endif
-    if (session->config.hid_passthrough) {
-        hid_passthrough_manager_start(&session->hid_pt, session->server->serverInfo.address,
-                                      session->config.hid_passthrough_port, true);
-        hid_passthrough_manager_set_stream_input(&session->hid_pt, &session->input);
-        hid_passthrough_manager_rescan(&session->hid_pt);
-        hid_passthrough_manager_reconcile(&session->hid_pt, &session->input);
-    }
     session_input_started(&session->input);
     return true;
 }
 
 void session_stop_input(session_t *session) {
     session_input_stopped(&session->input);
-    if (session->config.hid_passthrough) {
-        hid_passthrough_manager_stop(&session->hid_pt);
-    }
 }
 
 bool session_has_input(session_t *session) {
     return session->input.started;
-}
-
-#if defined(TARGET_WEBOS)
-hid_passthrough_manager_t *session_get_hid_passthrough(session_t *session) {
-    return session ? &session->hid_pt : NULL;
-}
-#endif
-
-void session_ensure_hid_passthrough(session_t *session) {
-    if (!session || !session->config.hid_passthrough || !session->server) {
-        return;
-    }
-    if (hid_passthrough_manager_active(&session->hid_pt)) {
-        hid_passthrough_manager_set_stream_input(&session->hid_pt, &session->input);
-        return;
-    }
-    hid_passthrough_manager_start(&session->hid_pt, session->server->serverInfo.address,
-                                  session->config.hid_passthrough_port, true);
-    hid_passthrough_manager_set_stream_input(&session->hid_pt, &session->input);
-    hid_passthrough_manager_rescan(&session->hid_pt);
-    hid_passthrough_manager_reconcile(&session->hid_pt, &session->input);
 }
 
 void session_toggle_vmouse(session_t *session) {
@@ -319,9 +278,8 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     } else {
         config->stick_deadzone = (uint8_t) app_config->stick_deadzone;
     }
-    config->hid_passthrough = app_config->hid_passthrough;
-    config->hid_passthrough_port = app_config->hid_passthrough_port > 0 ? app_config->hid_passthrough_port : 48054;
-    config->hid_passthrough_autoplug = app_config->hid_passthrough_autoplug;
+    config->auto_adjust_bitrate = app_config->auto_adjust_bitrate;
+    config->abr_mode = app_config->abr_mode;
 
     SS4S_VideoCapabilities video_cap = app->ss4s.video_cap;
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;
@@ -343,12 +301,6 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265;
         if (app_config->hdr && video_cap.hdr) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
-        }
-    }
-    if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1) {
-        config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN8;
-        if (app_config->hdr && video_cap.hdr) {
-            config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN10;
         }
     }
     // If no video format is supported, default to H.264

@@ -49,6 +49,16 @@ static void cb_detail_cancel(lv_event_t *event);
 
 static void cb_detail_key(lv_event_t *event);
 
+static void launcher_profile_dropdown_clicked(lv_event_t *event);
+
+static void launcher_profile_dropdown_key_preprocess(lv_event_t *event);
+
+static void launcher_profile_dropdown_key(lv_event_t *event);
+
+static void launcher_profile_dropdown_esc_preprocess(lv_event_t *event);
+
+static bool launcher_close_profile_dropdown(launcher_fragment_t *fragment, lv_obj_t *target);
+
 static void cb_server_btn_clicked(lv_event_t *event);
 
 static void open_manual_add(lv_event_t *event);
@@ -156,6 +166,7 @@ static void launcher_controller(lv_fragment_t *self, void *args) {
     fragment->first_created = true;
     fragment->launch_params = fargs->params;
     fragment->settings_fragment = NULL;
+    fragment->active_dropdown = NULL;
 }
 
 static void controller_dtor(lv_fragment_t *self) {
@@ -373,6 +384,108 @@ static void cb_detail_key(lv_event_t *event) {
     }
 }
 
+static bool launcher_close_profile_dropdown(launcher_fragment_t *fragment, lv_obj_t *target) {
+    lv_obj_t *dropdown = fragment->profile_dropdown;
+    if (dropdown == NULL) {
+        return false;
+    }
+    if (fragment->active_dropdown != dropdown && target != dropdown) {
+        return false;
+    }
+    if (!lv_dropdown_is_open(dropdown) && fragment->active_dropdown == NULL) {
+        return false;
+    }
+    fragment->active_dropdown = NULL;
+    if (lv_dropdown_is_open(dropdown)) {
+        lv_dropdown_close(dropdown);
+    }
+    lv_group_focus_obj(dropdown);
+    return true;
+}
+
+static void launcher_profile_dropdown_clicked(lv_event_t *event) {
+    launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    lv_obj_t *target = lv_event_get_target(event);
+    if (lv_obj_has_state(target, LV_STATE_CHECKED)) {
+        fragment->active_dropdown = target;
+    } else {
+        fragment->active_dropdown = NULL;
+    }
+}
+
+static void launcher_profile_dropdown_esc_preprocess(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_KEY || lv_event_get_key(event) != LV_KEY_ESC) {
+        return;
+    }
+    launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    if (launcher_close_profile_dropdown(fragment, lv_event_get_target(event))) {
+        lv_event_stop_processing(event);
+    }
+}
+
+static void launcher_profile_dropdown_key_preprocess(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_KEY) {
+        return;
+    }
+    launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    lv_obj_t *target = lv_event_get_target(event);
+    if (target != fragment->profile_dropdown || fragment->active_dropdown) {
+        return;
+    }
+    switch (lv_event_get_key(event)) {
+        case LV_KEY_UP:
+            focus_detail(fragment);
+            lv_event_stop_processing(event);
+            return;
+        case LV_KEY_DOWN:
+            lv_event_stop_processing(event);
+            return;
+        case LV_KEY_LEFT:
+            lv_group_focus_prev(fragment->nav_group);
+            lv_event_stop_processing(event);
+            return;
+        case LV_KEY_RIGHT:
+            lv_group_focus_next(fragment->nav_group);
+            lv_event_stop_processing(event);
+            return;
+        default:
+            return;
+    }
+}
+
+static void launcher_profile_dropdown_key(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_KEY) {
+        return;
+    }
+    launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    if (!fragment->active_dropdown) {
+        return;
+    }
+    switch (lv_event_get_key(event)) {
+        case LV_KEY_UP:
+        case LV_KEY_DOWN:
+        case LV_KEY_LEFT:
+        case LV_KEY_RIGHT:
+            lv_event_stop_bubbling(event);
+            return;
+        default:
+            return;
+    }
+}
+
+void launcher_attach_profile_dropdown_nav(launcher_fragment_t *fragment) {
+    lv_obj_t *dropdown = fragment->profile_dropdown;
+    if (dropdown == NULL) {
+        return;
+    }
+    lv_obj_add_event_cb(dropdown, launcher_profile_dropdown_clicked, LV_EVENT_CLICKED, fragment);
+    lv_obj_add_event_cb(dropdown, launcher_profile_dropdown_key_preprocess,
+                        LV_EVENT_KEY | LV_EVENT_PREPROCESS, fragment);
+    lv_obj_add_event_cb(dropdown, launcher_profile_dropdown_key, LV_EVENT_KEY, fragment);
+    lv_obj_add_event_cb(dropdown, launcher_profile_dropdown_esc_preprocess,
+                        LV_EVENT_KEY | LV_EVENT_PREPROCESS, fragment);
+}
+
 static void cb_topbar_focused(lv_event_t *event) {
     launcher_fragment_t *controller = lv_event_get_user_data(event);
     if (!controller->pane_initialized) { return; }
@@ -381,6 +494,9 @@ static void cb_topbar_focused(lv_event_t *event) {
 
 static void cb_topbar_key(lv_event_t *event) {
     launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    if (fragment->active_dropdown) {
+        return;
+    }
     switch (lv_event_get_key(event)) {
         case LV_KEY_LEFT: {
             lv_group_focus_prev(fragment->nav_group);

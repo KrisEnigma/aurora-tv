@@ -103,6 +103,7 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_max_width(controller->profile_dropdown, LV_DPX(160), 0);
     lv_obj_add_event_cb(controller->profile_dropdown, launcher_profile_changed, LV_EVENT_VALUE_CHANGED, controller);
     launcher_refresh_profile_dropdown(controller);
+    launcher_attach_profile_dropdown_nav(controller);
 
     /* Spacer that grows to push the action buttons to the right edge. */
     lv_obj_t *spacer = lv_obj_create(topbar);

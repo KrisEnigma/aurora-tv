@@ -66,6 +66,8 @@ static void on_rename_profile_clicked(lv_event_t *e);
 
 static void on_delete_profile_clicked(lv_event_t *e);
 
+static void basic_pane_add_profile_section(basic_pane_t *pane, lv_obj_t *view);
+
 const lv_fragment_class_t settings_pane_basic_cls = {
     .constructor_cb = pane_ctor,
     .destructor_cb = pane_dtor,
@@ -96,38 +98,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_t *view = pref_pane_container(container);
     lv_obj_set_layout(view, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(view, LV_FLEX_FLOW_ROW_WRAP);
-
-    pref_title_label(view, locstr("Streaming profile"));
-    pane->profile_dropdown = lv_dropdown_create(view);
-    lv_obj_set_width(pane->profile_dropdown, LV_PCT(100));
-    refresh_profile_dropdown(pane);
-    lv_obj_add_event_cb(pane->profile_dropdown, on_profile_changed, LV_EVENT_VALUE_CHANGED, self);
-
-    lv_obj_t *profile_actions = lv_obj_create(view);
-    lv_obj_remove_style_all(profile_actions);
-    lv_obj_set_width(profile_actions, LV_PCT(100));
-    lv_obj_set_flex_flow(profile_actions, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(profile_actions, lv_dpx(8), 0);
-
-    lv_obj_t *save_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *save_profile_label = lv_label_create(save_profile_btn);
-    lv_label_set_text(save_profile_label, locstr("Save to profile"));
-    lv_obj_add_event_cb(save_profile_btn, on_save_profile_clicked, LV_EVENT_CLICKED, self);
-
-    lv_obj_t *new_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *new_profile_label = lv_label_create(new_profile_btn);
-    lv_label_set_text(new_profile_label, locstr("New"));
-    lv_obj_add_event_cb(new_profile_btn, on_new_profile_clicked, LV_EVENT_CLICKED, self);
-
-    lv_obj_t *rename_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *rename_profile_label = lv_label_create(rename_profile_btn);
-    lv_label_set_text(rename_profile_label, locstr("Rename"));
-    lv_obj_add_event_cb(rename_profile_btn, on_rename_profile_clicked, LV_EVENT_CLICKED, self);
-
-    lv_obj_t *delete_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *delete_profile_label = lv_label_create(delete_profile_btn);
-    lv_label_set_text(delete_profile_label, locstr("Delete"));
-    lv_obj_add_event_cb(delete_profile_btn, on_delete_profile_clicked, LV_EVENT_CLICKED, self);
 
     pane->abr_checkbox = pref_checkbox(view, locstr("Adaptive bitrate"), &app_configuration->auto_adjust_bitrate, false);
     lv_obj_add_event_cb(pane->abr_checkbox, on_abr_changed, LV_EVENT_VALUE_CHANGED, self);
@@ -234,6 +204,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     update_bitrate_label(pane);
     update_bitrate_hint(pane);
 
+    basic_pane_add_profile_section(pane, view);
+
     return view;
 }
 
@@ -334,6 +306,41 @@ static void refresh_profile_dropdown(basic_pane_t *pane) {
     }
     lv_dropdown_set_options(pane->profile_dropdown, options[0] ? options : "Default");
     lv_dropdown_set_selected(pane->profile_dropdown, active_index);
+}
+
+static void basic_pane_add_profile_section(basic_pane_t *pane, lv_obj_t *view) {
+    pref_header(view, locstr("Streaming profile"));
+
+    pane->profile_dropdown = lv_dropdown_create(view);
+    lv_obj_set_width(pane->profile_dropdown, LV_PCT(100));
+    refresh_profile_dropdown(pane);
+    lv_obj_add_event_cb(pane->profile_dropdown, on_profile_changed, LV_EVENT_VALUE_CHANGED, pane);
+
+    lv_obj_t *profile_actions = lv_obj_create(view);
+    lv_obj_remove_style_all(profile_actions);
+    lv_obj_set_width(profile_actions, LV_PCT(100));
+    lv_obj_set_flex_flow(profile_actions, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(profile_actions, lv_dpx(8), 0);
+
+    lv_obj_t *save_profile_btn = lv_btn_create(profile_actions);
+    lv_obj_t *save_profile_label = lv_label_create(save_profile_btn);
+    lv_label_set_text(save_profile_label, locstr("Save to profile"));
+    lv_obj_add_event_cb(save_profile_btn, on_save_profile_clicked, LV_EVENT_CLICKED, pane);
+
+    lv_obj_t *new_profile_btn = lv_btn_create(profile_actions);
+    lv_obj_t *new_profile_label = lv_label_create(new_profile_btn);
+    lv_label_set_text(new_profile_label, locstr("New"));
+    lv_obj_add_event_cb(new_profile_btn, on_new_profile_clicked, LV_EVENT_CLICKED, pane);
+
+    lv_obj_t *rename_profile_btn = lv_btn_create(profile_actions);
+    lv_obj_t *rename_profile_label = lv_label_create(rename_profile_btn);
+    lv_label_set_text(rename_profile_label, locstr("Rename"));
+    lv_obj_add_event_cb(rename_profile_btn, on_rename_profile_clicked, LV_EVENT_CLICKED, pane);
+
+    lv_obj_t *delete_profile_btn = lv_btn_create(profile_actions);
+    lv_obj_t *delete_profile_label = lv_label_create(delete_profile_btn);
+    lv_label_set_text(delete_profile_label, locstr("Delete"));
+    lv_obj_add_event_cb(delete_profile_btn, on_delete_profile_clicked, LV_EVENT_CLICKED, pane);
 }
 
 static void on_profile_changed(lv_event_t *e) {

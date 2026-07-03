@@ -185,6 +185,7 @@ static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_t *applist = controller->applist = lv_gridview_create(view);
     lv_obj_add_flag(applist, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_scroll_dir(applist, LV_DIR_VER);
+    lv_obj_clear_flag(applist, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
     lv_obj_set_scrollbar_mode(applist, LV_SCROLLBAR_MODE_ACTIVE);
     lv_obj_set_style_pad_hor(applist, lv_dpx(32), 0);
     lv_obj_set_style_pad_ver(applist, lv_dpx(28), 0);

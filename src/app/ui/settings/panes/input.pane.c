@@ -31,10 +31,6 @@ static void update_deadzone_label(input_pane_t *pane);
 
 static void on_deadzone_changed(lv_event_t *e);
 
-static void on_hid_passthrough_changed(lv_event_t *e);
-
-static void hid_passthrough_ui_update(input_pane_t *pane);
-
 const lv_fragment_class_t settings_pane_input_cls = {
         .constructor_cb = pane_ctor,
         .create_obj_cb = create_obj,
@@ -76,14 +72,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     pref_header(view, locstr("Gamepad"));
 
-    lv_obj_t *hid_pt_toggle = pref_checkbox(view, locstr("Enable HID Passthrough (Experimental)"),
-                                            &app_configuration->hid_passthrough, false);
-    lv_obj_add_event_cb(hid_pt_toggle, on_hid_passthrough_changed, LV_EVENT_VALUE_CHANGED, pane);
-    pref_desc_label(view,
-                    locstr("Bridge selected controllers to the PC as native HID devices. "
-                           "Other controllers keep using standard Moonlight emulation."),
-                    false);
-
     pane->deadzone_label = pref_title_label(view, locstr("Analog stick deadzone"));
     pane->deadzone_slider = pref_slider(view, &app_configuration->stick_deadzone, 0, 20, 1);
     lv_obj_set_width(pane->deadzone_slider, LV_PCT(100));
@@ -106,7 +94,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 #if FEATURE_INPUT_EVMOUSE
     hwmouse_state_update(pane);
 #endif
-    hid_passthrough_ui_update(pane);
     update_deadzone_label(pane);
     return view;
 }
@@ -137,12 +124,4 @@ static void update_deadzone_label(input_pane_t *pane) {
 static void on_deadzone_changed(lv_event_t *e) {
     input_pane_t *pane = (input_pane_t *) lv_event_get_user_data(e);
     update_deadzone_label(pane);
-}
-
-static void hid_passthrough_ui_update(input_pane_t *pane) {
-    (void) pane;
-}
-
-static void on_hid_passthrough_changed(lv_event_t *e) {
-    hid_passthrough_ui_update((input_pane_t *) lv_event_get_user_data(e));
 }

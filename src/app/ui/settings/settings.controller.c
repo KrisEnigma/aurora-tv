@@ -1,4 +1,5 @@
 #include "settings.controller.h"
+#include "profile/profile_manager.h"
 
 #include <string.h>
 
@@ -231,6 +232,10 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
 static void on_destroy_view(lv_fragment_t *self, lv_obj_t *view) {
     settings_controller_t *controller = (settings_controller_t *) self;
     LV_UNUSED(view);
+    const char *active_id = profile_manager_active_id();
+    if (active_id) {
+        profile_manager_save_from_settings(app_configuration, active_id);
+    }
     settings_save(app_configuration);
     settings_apply_locale_if_needed(controller);
 

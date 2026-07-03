@@ -48,13 +48,34 @@ if [ ! -x "${SDK_ROOT}/bin/arm-webos-linux-gnueabi-gcc" ]; then
   exit 1
 fi
 # Build outside the Windows bind mount: cmake try_compile breaks on NTFS/exFAT volumes.
-export CMAKE_BINARY_DIR=/tmp/aurora-webos-build
+if [ "${WEBOS_NDL_LOW_LATENCY:-0}" = "1" ]; then
+    export CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR:-/tmp/aurora-webos-build-ll}"
+    echo "=== NDL low-latency build (WEBOS_NDL_LOW_LATENCY=1) ==="
+else
+    export CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR:-/tmp/aurora-webos-build}"
+fi
 if [ "${DOCKER_CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf "${CMAKE_BINARY_DIR}"
 fi
 export CI=1
+export WEBOS_NDL_LOW_LATENCY
 sed 's/\r$//' ./scripts/webos/apply_ndl_low_latency.sh | bash
 sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release
 
 mkdir -p dist
 find "${CMAKE_BINARY_DIR}" -maxdepth 3 -name '*.ipk' -exec cp -f {} dist/ \;
+
+if [ "${WEBOS_NDL_LOW_LATENCY:-0}" = "1" ]; then
+    for ipk in dist/*.ipk; do
+        [ -f "${ipk}" ] || continue
+        case "${ipk}" in
+            *_ll.ipk) continue ;;
+        esac
+        ll_ipk="${ipk%.ipk}_ll.ipk"
+        mv -f "${ipk}" "${ll_ipk}"
+        echo "Low-latency package: ${ll_ipk}"
+    done
+    echo ""
+    echo "Note: NDL sources under third_party/ss4s were patched in the mounted tree."
+    echo "      Run 'git checkout third_party/ss4s' before a standard (non-LL) rebuild if needed."
+fi

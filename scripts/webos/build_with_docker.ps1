@@ -1,5 +1,6 @@
 # Build Aurora for LG webOS via Docker
 # Works on Windows without WSL Ubuntu - uses an Ubuntu container
+# Low-latency variant: scripts/webos/build_with_docker_ll.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

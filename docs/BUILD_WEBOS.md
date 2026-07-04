@@ -218,16 +218,6 @@ Aurora does not bundle a Tailscale client on the TV. To reach a PC over Tailscal
 
 The TV and PC do not need to be on the same physical network, but both must reach each other through your tailnet.
 
-### NDL low-latency build (optional, QNED / webOS 7+)
-
-For TVs using the **NDL** decoder (not SMP on C1/C2), you can enable reduced A/V buffering at build time:
-
-```bash
-WEBOS_NDL_LOW_LATENCY=1 ./scripts/webos/build_for_lg.sh
-```
-
-This sets video/audio PTS to zero in the NDL driver. Test on your model before daily use; some sets may show A/V drift.
-
 ---
 
 ## 5. webOS Homebrew catalog

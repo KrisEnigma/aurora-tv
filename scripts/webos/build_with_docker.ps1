@@ -1,6 +1,5 @@
 # Build Aurora for LG webOS via Docker
 # Works on Windows without WSL Ubuntu - uses an Ubuntu container
-# Low-latency variant: scripts/webos/build_with_docker_ll.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -28,18 +27,19 @@ Write-Host ""
 
 # Mount the project and run the build
 $ScriptPath = Join-Path $PSScriptRoot "docker_build_inner.sh"
-# sed removes CRLF (Windows line endings) for Linux compatibility
-docker run --rm -e CI=1 -e DOCKER_SKIP_SUBMODULES=1 `
-    -v "${ProjectRoot}:/build" -v "${ScriptPath}:/docker_build.sh" -w /build ubuntu:22.04 `
-    bash -c "sed 's/\r$//' /docker_build.sh | bash"
+. (Join-Path $PSScriptRoot "docker_build_invoke.ps1")
+$exitCode = Invoke-AuroraWebOSDockerBuild -ProjectRoot $ProjectRoot -InnerScriptPath $ScriptPath -Env @{
+    CI                    = "1"
+    DOCKER_SKIP_SUBMODULES = "1"
+}
 
-if ($LASTEXITCODE -eq 0) {
+if ($exitCode -eq 0) {
     Write-Host ""
     Write-Host "=== Build complete! ===" -ForegroundColor Green
     Write-Host "Package in: $ProjectRoot\dist\" -ForegroundColor Cyan
     Get-ChildItem "$ProjectRoot\dist\*.ipk" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
 } else {
     Write-Host ""
-    Write-Host "Build failed." -ForegroundColor Red
+    Write-Host "Build failed. Scroll up for the Docker log (apt/DNS, cmake, etc.)." -ForegroundColor Red
     exit 1
 }

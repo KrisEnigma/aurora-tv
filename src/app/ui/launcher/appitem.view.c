@@ -25,7 +25,6 @@ lv_obj_t *appitem_view(apps_fragment_t *controller, lv_obj_t *parent) {
     lv_img_set_antialias(item, true);
 
     lv_obj_set_style_outline_opa(item, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
-
     lv_obj_set_style_transform_pivot_x(item, controller->col_width / 2, 0);
     lv_obj_set_style_transform_pivot_y(item, controller->col_height / 2, 0);
 
@@ -83,7 +82,6 @@ void appitem_style_init(appitem_styles_t *style) {
     lv_style_set_outline_color(&style->cover, ml_color_hex(ML_COLOR_PRIMARY));
     lv_style_set_outline_width(&style->cover, LV_DPX(4));
     lv_style_set_outline_opa(&style->cover, LV_OPA_TRANSP);
-    lv_style_set_outline_opa(&style->cover, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
     lv_style_set_outline_pad(&style->cover, LV_DPX(3));
     lv_style_set_shadow_width(&style->cover, LV_DPX(24));
     lv_style_set_shadow_opa(&style->cover, LV_OPA_50);

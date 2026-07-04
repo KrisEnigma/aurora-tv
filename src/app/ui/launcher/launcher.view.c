@@ -47,11 +47,16 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_style_pad_gap(content, 0, 0);
 
-    /* Stack: games area + optional settings overlay (same footprint; overlay on top). */
-    lv_obj_t *detail_stack = lv_obj_create(content);
+    /* Full-screen shell: hero/detail underneath, transparent top bar overlay. */
+    lv_obj_t *shell = lv_obj_create(content);
+    lv_obj_remove_style_all(shell);
+    lv_obj_set_width(shell, LV_PCT(100));
+    lv_obj_set_flex_grow(shell, 1);
+    lv_obj_clear_flag(shell, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *detail_stack = lv_obj_create(shell);
     lv_obj_remove_style_all(detail_stack);
-    lv_obj_set_width(detail_stack, LV_PCT(100));
-    lv_obj_set_flex_grow(detail_stack, 1);
+    lv_obj_set_size(detail_stack, LV_PCT(100), LV_PCT(100));
     lv_obj_clear_flag(detail_stack, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_layout(detail_stack, 0);
 
@@ -68,19 +73,18 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_style_set_bg_opa(&controller->topbar_btn_style, LV_OPA_COVER);
     lv_style_set_text_color(&controller->topbar_btn_style, ml_color_hex(ML_COLOR_TEXT));
 
-    /* ---------------- Top bar (replaces the old sidebar nav) ---------------- */
-    lv_obj_t *topbar = lv_obj_create(content);
+    /* ---------------- Top bar (transparent overlay; Playnite-style) ---------------- */
+    lv_obj_t *topbar = lv_obj_create(shell);
     lv_obj_remove_style_all(topbar);
-    lv_obj_set_size(topbar, LV_PCT(100), LV_DPX(TOPBAR_HEIGHT));
+    lv_obj_set_width(topbar, LV_PCT(100));
+    lv_obj_set_height(topbar, LV_DPX(TOPBAR_HEIGHT));
+    lv_obj_align(topbar, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_move_foreground(topbar);
     lv_obj_set_layout(topbar, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(topbar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(topbar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(topbar, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(topbar, ml_color_hex(ML_COLOR_BG), 0);
-    lv_obj_set_style_border_side(topbar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(topbar, LV_DPX(1), 0);
-    lv_obj_set_style_border_color(topbar, ml_color_hex(ML_COLOR_BORDER), 0);
-    lv_obj_set_style_border_opa(topbar, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(topbar, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(topbar, 0, 0);
     lv_obj_set_style_pad_hor(topbar, LV_DPX(20), 0);
     lv_obj_set_style_pad_ver(topbar, LV_DPX(8), 0);
     lv_obj_set_style_pad_gap(topbar, LV_DPX(8), 0);
@@ -119,7 +123,7 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_pad_hor(server_btn, LV_DPX(14), 0);
     lv_obj_set_style_radius(server_btn, LV_DPX(12), 0);
     lv_obj_set_style_bg_color(server_btn, ml_color_hex(ML_COLOR_SURFACE_ALT), 0);
-    lv_obj_set_style_bg_opa(server_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(server_btn, LV_OPA_70, 0);
     lv_obj_set_style_text_color(server_btn, ml_color_hex(ML_COLOR_TEXT), 0);
     lv_obj_set_layout(server_btn, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(server_btn, LV_FLEX_FLOW_ROW);
@@ -143,20 +147,16 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_label_set_text_static(srv_chevron, MAT_SYMBOL_ARROW_DROP_DOWN);
     lv_obj_clear_flag(srv_chevron, LV_OBJ_FLAG_CLICKABLE);
 
-    /* Right-side action buttons (icon only). */
-    lv_obj_t *add_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_ADD_TO_QUEUE);
-    lv_obj_t *help_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_HELP);
-    lv_obj_t *pref_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_SETTINGS);
-    lv_obj_t *quit_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_CLOSE);
+    /* Right-side: server selector + hamburger menu. */
+    lv_obj_t *menu_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_MENU);
 
-    /* ---------------- Detail (game grid) ---------------- */
+    /* ---------------- Detail (game rail + hero background) ---------------- */
     lv_obj_t *detail = lv_obj_create(detail_stack);
     lv_obj_remove_style_all(detail);
     lv_obj_set_width(detail, LV_PCT(100));
     lv_obj_set_height(detail, LV_PCT(100));
     lv_obj_clear_flag(detail, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(detail, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(detail, ml_color_hex(ML_COLOR_BG), 0);
+    lv_obj_set_style_bg_opa(detail, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(detail, 0, 0);
     lv_obj_add_event_cb(detail, detail_group_add, LV_EVENT_CHILD_CREATED, controller);
 
@@ -173,10 +173,7 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     controller->settings_layer = settings_layer;
     controller->server_btn = server_btn;
     controller->server_label = server_label;
-    controller->add_btn = add_btn;
-    controller->help_btn = help_btn;
-    controller->pref_btn = pref_btn;
-    controller->quit_btn = quit_btn;
+    controller->menu_btn = menu_btn;
     return win;
 }
 
@@ -185,6 +182,7 @@ static lv_obj_t *create_topbar_icon_btn(launcher_fragment_t *controller, lv_obj_
     lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_size(btn, LV_DPX(TOPBAR_BTN_SIZE), LV_DPX(TOPBAR_BTN_SIZE));
     lv_obj_add_style(btn, &controller->topbar_btn_style, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_70, 0);
     lv_obj_t *lbl = lv_label_create(btn);
     lv_obj_set_style_text_font(lbl, lv_theme_moonlight_get_iconfont_small(parent), 0);
     lv_obj_set_style_text_color(lbl, ml_color_hex(ML_COLOR_TEXT), 0);

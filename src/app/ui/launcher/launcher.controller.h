@@ -36,7 +36,7 @@ typedef struct launcher_fragment_t {
     lv_obj_t *server_btn;
     lv_obj_t *server_label;
 
-    lv_obj_t *add_btn, *pref_btn, *help_btn, *quit_btn;
+    lv_obj_t *menu_btn;
 
     /* Focus groups: nav_group for top-bar buttons, detail_group for game rail items. */
     lv_group_t *nav_group, *detail_group;

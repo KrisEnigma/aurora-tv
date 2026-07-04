@@ -7,6 +7,11 @@
 
 typedef struct app_t app_t;
 
+typedef enum {
+    APPS_FILTER_ALL = 0,
+    APPS_FILTER_FAVORITES,
+} apps_filter_t;
+
 typedef struct {
     lv_style_t cover;
     lv_style_t btn;
@@ -38,11 +43,17 @@ typedef struct {
     lv_obj_t *errortitle, *errorhint, *errordetail;
     lv_obj_t *actions;
 
+    lv_obj_t *hero_bg, *hero_dim, *hero_title, *filter_bar;
+
     lv_obj_t *quit_progress;
 
     appitem_styles_t appitem_style;
+    apps_filter_t filter;
+    int *filter_indices;
+    int filter_count;
     int col_count;
     lv_coord_t col_width, col_height;
+    lv_coord_t rail_height;
     int focus_backup;
 } apps_fragment_t;
 
@@ -61,3 +72,12 @@ typedef struct {
 } apps_fragment_arg_t;
 
 extern const lv_fragment_class_t apps_controller_class;
+
+/** Update hero background and title when a game tile receives focus. */
+void apps_on_item_focused(apps_fragment_t *controller, int app_id);
+
+/** Move keypad/gamepad focus to the filter tabs row. */
+void apps_focus_filter_bar(apps_fragment_t *controller);
+
+/** Move focus into the bottom game rail. */
+void apps_focus_rail(apps_fragment_t *controller);

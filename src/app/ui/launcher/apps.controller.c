@@ -22,6 +22,14 @@
 #include "pair.dialog.h"
 #include "ui/common/progress_dialog.h"
 
+#include "lvgl/theme/lv_theme_moonlight_colors.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#define APPS_RAIL_COLS         8
+#define APPS_RAIL_VISIBLE_ROWS 2
+
 typedef void (*action_cb_t)(apps_fragment_t *controller, lv_obj_t *buttons, uint16_t index);
 
 static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container);
@@ -120,6 +128,22 @@ static void show_ok(apps_fragment_t *fragment);
 
 static void show_error(apps_fragment_t *fragment, const char *title, const char *hint, const char *detail);
 
+static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t *list);
+
+static void rebuild_filter_indices(apps_fragment_t *controller);
+
+static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int position);
+
+static void apps_layout_rail(apps_fragment_t *controller);
+
+static void apps_set_playnite_chrome_visible(apps_fragment_t *controller, bool visible);
+
+static void filter_bar_key_cb(lv_event_t *event);
+
+static void filter_bar_value_cb(lv_event_t *event);
+
+static void applist_key_preprocess(lv_event_t *event);
+
 static apps_fragment_t *current_instance = NULL;
 
 const static lv_gridview_adapter_t apps_adapter = {
@@ -162,6 +186,10 @@ static void apps_controller_ctor(lv_fragment_t *self, void *args) {
     controller->def_app = arg->def_app;
     controller->apploader = apploader_create(arg->global, &controller->uuid, &controller->apploader_cb, controller);
 
+    controller->filter = APPS_FILTER_ALL;
+    controller->filter_indices = NULL;
+    controller->filter_count = 0;
+
     appitem_style_init(&controller->appitem_style);
 }
 
@@ -169,6 +197,7 @@ static void apps_controller_dtor(lv_fragment_t *self) {
     apps_fragment_t *fragment = (apps_fragment_t *) self;
     appitem_style_deinit(&fragment->appitem_style);
     apploader_destroy(fragment->apploader);
+    free(fragment->filter_indices);
     if (fragment->apploader_apps != NULL) {
         apploader_list_free(fragment->apploader_apps);
     }
@@ -181,19 +210,65 @@ static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_flag(view, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_size(view, LV_PCT(100), LV_PCT(100));
     lv_obj_set_scroll_dir(view, LV_DIR_NONE);
+    lv_obj_set_style_bg_opa(view, LV_OPA_TRANSP, 0);
+
+    lv_obj_t *hero_bg = controller->hero_bg = lv_img_create(view);
+    lv_obj_remove_style_all(hero_bg);
+    lv_obj_set_size(hero_bg, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(hero_bg, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_img_opa(hero_bg, LV_OPA_80, 0);
+    lv_obj_clear_flag(hero_bg, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *hero_dim = controller->hero_dim = lv_obj_create(view);
+    lv_obj_remove_style_all(hero_dim);
+    lv_obj_set_size(hero_dim, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(hero_dim, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(hero_dim, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(hero_dim, LV_OPA_50, 0);
+    lv_obj_clear_flag(hero_dim, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    static const char *filter_map[] = {translatable("All"), translatable("Favorites"), ""};
+    lv_obj_t *filter_bar = controller->filter_bar = lv_btnmatrix_create(view);
+    lv_btnmatrix_set_map(filter_bar, filter_map);
+    lv_btnmatrix_set_one_checked(filter_bar, true);
+    lv_btnmatrix_set_btn_ctrl(filter_bar, 0, LV_BTNMATRIX_CTRL_CHECKED);
+    lv_obj_set_style_pad_all(filter_bar, LV_DPX(6), 0);
+    lv_obj_set_style_pad_gap(filter_bar, LV_DPX(8), 0);
+    lv_obj_set_style_radius(filter_bar, LV_DPX(18), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(filter_bar, ml_color_hex(ML_COLOR_SURFACE_ALT), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(filter_bar, LV_OPA_80, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(filter_bar, ml_color_hex(ML_COLOR_PRIMARY), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(filter_bar, ml_color_hex(ML_COLOR_TEXT), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(filter_bar, 0, LV_PART_ITEMS);
+    lv_obj_set_style_outline_width(filter_bar, LV_DPX(2), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_color(filter_bar, ml_color_hex(ML_COLOR_PRIMARY), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(filter_bar, LV_DPX(2), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
+    lv_obj_align(filter_bar, LV_ALIGN_TOP_LEFT, LV_DPX(32), LV_DPX(68));
+
+    lv_obj_t *hero_title = controller->hero_title = lv_label_create(view);
+    lv_obj_set_width(hero_title, LV_PCT(65));
+    lv_obj_set_style_text_font(hero_title, lv_theme_get_font_large(view), 0);
+    lv_obj_set_style_text_color(hero_title, ml_color_hex(ML_COLOR_TEXT), 0);
+    lv_label_set_long_mode(hero_title, LV_LABEL_LONG_DOT);
+    lv_label_set_text(hero_title, "");
+    lv_obj_align(hero_title, LV_ALIGN_LEFT_MID, LV_DPX(48), LV_DPX(-48));
 
     lv_obj_t *applist = controller->applist = lv_gridview_create(view);
     lv_obj_add_flag(applist, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_scroll_dir(applist, LV_DIR_VER);
     lv_obj_clear_flag(applist, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
-    lv_obj_set_scrollbar_mode(applist, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_scrollbar_mode(applist, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_pad_hor(applist, lv_dpx(32), 0);
-    lv_obj_set_style_pad_ver(applist, lv_dpx(28), 0);
-    lv_obj_set_style_pad_gap(applist, lv_dpx(20), 0);
+    lv_obj_set_style_pad_top(applist, lv_dpx(8), 0);
+    lv_obj_set_style_pad_bottom(applist, lv_dpx(20), 0);
+    lv_obj_set_style_pad_gap(applist, lv_dpx(14), 0);
     lv_obj_set_style_radius(applist, 0, 0);
     lv_obj_set_style_border_side(applist, LV_BORDER_SIDE_NONE, 0);
-    lv_obj_set_style_bg_opa(applist, 0, 0);
-    lv_obj_set_size(applist, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(applist, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_anim_time(applist, 220, 0);
+    lv_obj_set_width(applist, LV_PCT(100));
+    lv_obj_align(applist, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_gridview_set_key_focus_clamp(applist, true);
     lv_obj_update_layout(applist);
 
     lv_gridview_set_adapter(applist, &apps_adapter);
@@ -251,7 +326,13 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
     lv_obj_add_event_cb(applist, applist_focus_enter, LV_EVENT_FOCUSED, controller);
     lv_obj_add_event_cb(applist, applist_focus_leave, LV_EVENT_DEFOCUSED, controller);
     lv_obj_add_event_cb(applist, applist_focus_leave, LV_EVENT_LEAVE, controller);
+    lv_obj_add_event_cb(applist, applist_key_preprocess, LV_EVENT_KEY | LV_EVENT_PREPROCESS, controller);
+    lv_obj_add_event_cb(controller->filter_bar, filter_bar_key_cb, LV_EVENT_KEY, controller);
+    lv_obj_add_event_cb(controller->filter_bar, filter_bar_value_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(controller->actions, actions_click_cb, LV_EVENT_VALUE_CHANGED, controller);
+
+    launcher_fragment_t *parent_controller = (launcher_fragment_t *) lv_fragment_get_parent(&controller->base);
+    lv_group_add_obj(parent_controller->detail_group, controller->filter_bar);
 
     update_grid_config(controller);
     lv_obj_set_user_data(controller->applist, controller);
@@ -276,21 +357,34 @@ static void obj_will_delete(lv_fragment_t *self, lv_obj_t *obj) {
 
 static void update_grid_config(apps_fragment_t *controller) {
     lv_obj_t *applist = controller->applist;
+    if (!applist) {
+        return;
+    }
     lv_obj_update_layout(applist);
     lv_coord_t applist_width = lv_obj_get_width(applist);
-    int col_count = LV_CLAMP(4, applist_width / lv_dpx(150), 8);
-    lv_coord_t col_width = (applist_width - lv_obj_get_style_pad_left(applist, 0) -
-                            lv_obj_get_style_pad_right(applist, 0) -
-                            lv_obj_get_style_pad_column(applist, 0) * (col_count - 1)) / col_count;
+    if (applist_width <= 0) {
+        applist_width = lv_disp_get_hor_res(NULL);
+    }
+    int col_count = APPS_RAIL_COLS;
+    lv_coord_t pad_l = lv_obj_get_style_pad_left(applist, 0);
+    lv_coord_t pad_r = lv_obj_get_style_pad_right(applist, 0);
+    lv_coord_t gap = lv_obj_get_style_pad_column(applist, 0);
+    lv_coord_t col_width = (applist_width - pad_l - pad_r - gap * (col_count - 1)) / col_count;
     controller->col_count = col_count;
     controller->col_width = col_width;
-    /* Vertical box art (Moonlight / GeForce NOW covers are ~130×180, ratio 3:4). */
     lv_coord_t row_height = (col_width * 4) / 3;
     controller->col_height = row_height;
+    lv_coord_t pad_row = lv_obj_get_style_pad_row(applist, 0);
+    lv_coord_t pad_top = lv_obj_get_style_pad_top(applist, 0);
+    lv_coord_t pad_bottom = lv_obj_get_style_pad_bottom(applist, 0);
+    controller->rail_height = row_height * APPS_RAIL_VISIBLE_ROWS + pad_row * (APPS_RAIL_VISIBLE_ROWS - 1)
+                              + pad_top + pad_bottom;
+    lv_obj_set_height(applist, controller->rail_height);
     lv_gridview_set_config(applist, col_count, row_height, LV_GRID_ALIGN_CENTER, LV_GRID_ALIGN_CENTER);
 
     controller->appitem_style.defcover_src.header.w = col_width;
     controller->appitem_style.defcover_src.header.h = row_height;
+    apps_layout_rail(controller);
 }
 
 static void on_destroy_view(lv_fragment_t *self, lv_obj_t *view) {
@@ -455,6 +549,7 @@ static void update_view_state(apps_fragment_t *controller) {
 }
 
 static void show_progress(apps_fragment_t *fragment) {
+    apps_set_playnite_chrome_visible(fragment, false);
     lv_obj_add_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
@@ -466,6 +561,7 @@ static void show_progress(apps_fragment_t *fragment) {
 }
 
 static void show_ok(apps_fragment_t *fragment) {
+    apps_set_playnite_chrome_visible(fragment, true);
     lv_obj_clear_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
@@ -477,9 +573,17 @@ static void show_ok(apps_fragment_t *fragment) {
     }
     int idx = fragment->focus_backup >= 0 ? fragment->focus_backup : 0;
     lv_gridview_focus(fragment->applist, idx);
+    idx = lv_gridview_get_focused_index(fragment->applist);
+    if (idx >= 0) {
+        apploader_item_t *app = apps_item_at_position(fragment, idx);
+        if (app != NULL) {
+            apps_on_item_focused(fragment, app->base.id);
+        }
+    }
 }
 
 static void show_error(apps_fragment_t *fragment, const char *title, const char *hint, const char *detail) {
+    apps_set_playnite_chrome_visible(fragment, false);
     lv_obj_add_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
@@ -513,6 +617,7 @@ static void appload_loaded(apploader_list_t *apps, void *userdata) {
     }
     apploader_list_free(fragment->apploader_apps);
     fragment->apploader_apps = apps;
+    rebuild_filter_indices(fragment);
     update_view_state(fragment);
 
     if (fragment->def_app > 0 && !fragment->def_app_launched) {
@@ -617,18 +722,10 @@ static void launcher_quit_game(apps_fragment_t *controller) {
 static int adapter_item_count(lv_obj_t *grid, void *data) {
     if (data == NULL) { return 0; }
     apps_fragment_t *controller = lv_obj_get_user_data(grid);
-    apploader_list_t *list = data;
-    // LVGL can only display up to 255 rows/columns, but I don't think anyone has library that big (1275 items)
-    int count = LV_MIN(list->count, 255 * controller->col_count);
-    if (!controller->show_hidden_apps) {
-        for (int i = 0; i < count; i++) {
-            if (list->items[i].hidden) {
-                count = i;
-                break;
-            }
-        }
+    if (controller->filter == APPS_FILTER_FAVORITES) {
+        return controller->filter_count;
     }
-    return count;
+    return apps_raw_visible_count(controller, data);
 }
 
 static lv_obj_t *adapter_create_view(lv_obj_t *parent) {
@@ -638,12 +735,11 @@ static lv_obj_t *adapter_create_view(lv_obj_t *parent) {
 
 static void adapter_bind_view(lv_obj_t *grid, lv_obj_t *item_view, void *data, int position) {
     apps_fragment_t *controller = lv_obj_get_user_data(grid);
-    apploader_list_t *list = data;
-    appitem_bind(controller, item_view, &list->items[position]);
-
-    // IDE seems to be pretty confused...
-    LV_UNUSED(list);
-    LV_UNUSED(position);
+    apploader_item_t *app = apps_item_at_position(controller, position);
+    if (app != NULL) {
+        appitem_bind(controller, item_view, app);
+    }
+    LV_UNUSED(data);
 }
 
 
@@ -832,4 +928,196 @@ static lv_gridview_data_change_t *apps_list_detect_change(const apploader_list_t
     }
     *num_changes = 0;
     return NULL;
+}
+
+static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t *list) {
+    int count = LV_MIN(list->count, 255 * controller->col_count);
+    if (!controller->show_hidden_apps) {
+        for (int i = 0; i < count; i++) {
+            if (list->items[i].hidden) {
+                count = i;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+static void rebuild_filter_indices(apps_fragment_t *controller) {
+    free(controller->filter_indices);
+    controller->filter_indices = NULL;
+    controller->filter_count = 0;
+    if (controller->apploader_apps == NULL) {
+        return;
+    }
+    int raw_count = apps_raw_visible_count(controller, controller->apploader_apps);
+    if (controller->filter != APPS_FILTER_FAVORITES) {
+        controller->filter_count = raw_count;
+        return;
+    }
+    for (int i = 0; i < raw_count; i++) {
+        if (controller->apploader_apps->items[i].fav) {
+            controller->filter_count++;
+        }
+    }
+    if (controller->filter_count <= 0) {
+        return;
+    }
+    controller->filter_indices = malloc((size_t) controller->filter_count * sizeof(int));
+    if (controller->filter_indices == NULL) {
+        controller->filter_count = 0;
+        return;
+    }
+    int j = 0;
+    for (int i = 0; i < raw_count; i++) {
+        if (controller->apploader_apps->items[i].fav) {
+            controller->filter_indices[j++] = i;
+        }
+    }
+}
+
+static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int position) {
+    if (controller->apploader_apps == NULL || position < 0) {
+        return NULL;
+    }
+    int raw = position;
+    if (controller->filter == APPS_FILTER_FAVORITES) {
+        if (controller->filter_indices == NULL || position >= controller->filter_count) {
+            return NULL;
+        }
+        raw = controller->filter_indices[position];
+    }
+    if (raw < 0 || raw >= controller->apploader_apps->count) {
+        return NULL;
+    }
+    return &controller->apploader_apps->items[raw];
+}
+
+static void apps_layout_rail(apps_fragment_t *controller) {
+    if (!controller->applist) {
+        return;
+    }
+    lv_obj_align(controller->filter_bar, LV_ALIGN_TOP_LEFT, LV_DPX(32), LV_DPX(68));
+    lv_obj_align(controller->hero_title, LV_ALIGN_LEFT_MID, LV_DPX(48), LV_DPX(-48));
+    lv_obj_align(controller->applist, LV_ALIGN_BOTTOM_MID, 0, 0);
+}
+
+static void apps_set_playnite_chrome_visible(apps_fragment_t *controller, bool visible) {
+    if (!controller->hero_bg) {
+        return;
+    }
+    if (visible) {
+        lv_obj_clear_flag(controller->hero_bg, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(controller->hero_dim, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(controller->hero_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(controller->filter_bar, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(controller->hero_bg, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(controller->hero_dim, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(controller->hero_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(controller->filter_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void apps_on_item_focused(apps_fragment_t *controller, int app_id) {
+    if (!controller || !controller->hero_bg || !controller->hero_title) {
+        return;
+    }
+    if (controller->apploader_apps == NULL) {
+        return;
+    }
+    const apploader_item_t *app = apploader_list_item_by_id(controller->apploader_apps, app_id);
+    if (app == NULL) {
+        return;
+    }
+    lv_label_set_text(controller->hero_title, app->base.name);
+    lv_coord_t w = lv_obj_get_width(controller->hero_bg);
+    lv_coord_t h = lv_obj_get_height(controller->hero_bg);
+    if (w <= 0 || h <= 0) {
+        w = lv_disp_get_hor_res(NULL);
+        h = lv_disp_get_ver_res(NULL);
+    }
+    coverloader_display(controller->coverloader, &controller->uuid, app_id,
+                        controller->hero_bg, w, h);
+}
+
+void apps_focus_filter_bar(apps_fragment_t *controller) {
+    if (!controller || !controller->filter_bar) {
+        return;
+    }
+    if (lv_obj_has_flag(controller->filter_bar, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    lv_group_focus_obj(controller->filter_bar);
+    lv_obj_add_state(controller->filter_bar, LV_STATE_FOCUS_KEY);
+}
+
+void apps_focus_rail(apps_fragment_t *controller) {
+    if (!controller || !controller->applist) {
+        return;
+    }
+    if (lv_obj_has_flag(controller->applist, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    lv_group_focus_obj(controller->applist);
+    int idx = controller->focus_backup >= 0 ? controller->focus_backup : 0;
+    lv_gridview_focus(controller->applist, idx);
+}
+
+static void filter_bar_key_cb(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_KEY) {
+        return;
+    }
+    apps_fragment_t *controller = lv_event_get_user_data(event);
+    launcher_fragment_t *launcher = (launcher_fragment_t *) lv_fragment_get_parent(&controller->base);
+    switch (lv_event_get_key(event)) {
+        case LV_KEY_UP:
+            launcher_restore_nav_focus(launcher);
+            lv_event_stop_processing(event);
+            break;
+        case LV_KEY_DOWN:
+            apps_focus_rail(controller);
+            lv_event_stop_processing(event);
+            break;
+        default:
+            break;
+    }
+}
+
+static void filter_bar_value_cb(lv_event_t *event) {
+    apps_fragment_t *controller = lv_event_get_user_data(event);
+    uint16_t sel = lv_btnmatrix_get_selected_btn(controller->filter_bar);
+    if (sel == LV_BTNMATRIX_BTN_NONE) {
+        return;
+    }
+    apps_filter_t new_filter = sel == 1 ? APPS_FILTER_FAVORITES : APPS_FILTER_ALL;
+    if (new_filter == controller->filter) {
+        return;
+    }
+    controller->filter = new_filter;
+    rebuild_filter_indices(controller);
+    controller->focus_backup = 0;
+    lv_gridview_rebind(controller->applist);
+    if (controller->filter_count > 0) {
+        lv_gridview_focus(controller->applist, 0);
+        apploader_item_t *app = apps_item_at_position(controller, 0);
+        if (app != NULL) {
+            apps_on_item_focused(controller, app->base.id);
+        }
+    } else {
+        lv_label_set_text(controller->hero_title, "");
+    }
+}
+
+static void applist_key_preprocess(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_KEY || lv_event_get_key(event) != LV_KEY_UP) {
+        return;
+    }
+    apps_fragment_t *controller = lv_event_get_user_data(event);
+    int idx = lv_gridview_get_focused_index(controller->applist);
+    if (idx < 0 || idx >= controller->col_count) {
+        return;
+    }
+    apps_focus_filter_bar(controller);
+    lv_event_stop_processing(event);
 }

@@ -57,3 +57,9 @@ Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUIL
 
 - Base: [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv)
 - Components: [moonlight-embedded](https://github.com/irtimmer/moonlight-embedded), [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c)
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
+
+Aurora is a fork of [moonlight-tv](https://github.com/mariotaku/moonlight-tv), which is also licensed under GPL-3.0.

@@ -62,4 +62,6 @@ Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUIL
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
 
+Copyright and attribution details are in [COPYRIGHT](COPYRIGHT).
+
 Aurora is a fork of [moonlight-tv](https://github.com/mariotaku/moonlight-tv), which is also licensed under GPL-3.0.

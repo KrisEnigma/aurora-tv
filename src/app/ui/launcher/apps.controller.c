@@ -29,6 +29,8 @@
 
 #define APPS_RAIL_COLS         8
 #define APPS_RAIL_VISIBLE_ROWS 2
+#define HERO_COVER_MAX_WIDTH   1280
+#define HERO_COVER_MAX_HEIGHT  720
 
 typedef void (*action_cb_t)(apps_fragment_t *controller, lv_obj_t *buttons, uint16_t index);
 
@@ -133,6 +135,9 @@ static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t 
 static void rebuild_filter_indices(apps_fragment_t *controller);
 
 static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int position);
+
+static apploader_item_t *apps_item_at_position_in_list(apps_fragment_t *controller, apploader_list_t *list,
+                                                       int position);
 
 static void apps_layout_rail(apps_fragment_t *controller);
 
@@ -370,6 +375,9 @@ static void update_grid_config(apps_fragment_t *controller) {
     lv_coord_t pad_r = lv_obj_get_style_pad_right(applist, 0);
     lv_coord_t gap = lv_obj_get_style_pad_column(applist, 0);
     lv_coord_t col_width = (applist_width - pad_l - pad_r - gap * (col_count - 1)) / col_count;
+    if (col_width < LV_DPX(40)) {
+        col_width = LV_MAX(LV_DPX(40), applist_width / col_count);
+    }
     controller->col_count = col_count;
     controller->col_width = col_width;
     lv_coord_t row_height = (col_width * 4) / 3;
@@ -609,15 +617,17 @@ static void appload_loaded(apploader_list_t *apps, void *userdata) {
     lv_gridview_data_change_t *changes = apps_list_detect_change(fragment->apploader_apps, apps, &num_changes);
     if (num_changes != 0) {
         fragment->focus_backup = 0;
+    }
+    apploader_list_free(fragment->apploader_apps);
+    fragment->apploader_apps = apps;
+    rebuild_filter_indices(fragment);
+    if (num_changes != 0) {
         lv_gridview_focus(fragment->applist, 0);
     }
     lv_gridview_set_data_advanced(fragment->applist, apps, changes, num_changes);
     if (changes != NULL) {
         free(changes);
     }
-    apploader_list_free(fragment->apploader_apps);
-    fragment->apploader_apps = apps;
-    rebuild_filter_indices(fragment);
     update_view_state(fragment);
 
     if (fragment->def_app > 0 && !fragment->def_app_launched) {
@@ -735,11 +745,11 @@ static lv_obj_t *adapter_create_view(lv_obj_t *parent) {
 
 static void adapter_bind_view(lv_obj_t *grid, lv_obj_t *item_view, void *data, int position) {
     apps_fragment_t *controller = lv_obj_get_user_data(grid);
-    apploader_item_t *app = apps_item_at_position(controller, position);
+    apploader_list_t *list = data != NULL ? data : controller->apploader_apps;
+    apploader_item_t *app = apps_item_at_position_in_list(controller, list, position);
     if (app != NULL) {
         appitem_bind(controller, item_view, app);
     }
-    LV_UNUSED(data);
 }
 
 
@@ -976,8 +986,9 @@ static void rebuild_filter_indices(apps_fragment_t *controller) {
     }
 }
 
-static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int position) {
-    if (controller->apploader_apps == NULL || position < 0) {
+static apploader_item_t *apps_item_at_position_in_list(apps_fragment_t *controller, apploader_list_t *list,
+                                                       int position) {
+    if (list == NULL || position < 0) {
         return NULL;
     }
     int raw = position;
@@ -987,10 +998,14 @@ static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int 
         }
         raw = controller->filter_indices[position];
     }
-    if (raw < 0 || raw >= controller->apploader_apps->count) {
+    if (raw < 0 || raw >= list->count) {
         return NULL;
     }
-    return &controller->apploader_apps->items[raw];
+    return &list->items[raw];
+}
+
+static apploader_item_t *apps_item_at_position(apps_fragment_t *controller, int position) {
+    return apps_item_at_position_in_list(controller, controller->apploader_apps, position);
 }
 
 static void apps_layout_rail(apps_fragment_t *controller) {
@@ -1036,6 +1051,21 @@ void apps_on_item_focused(apps_fragment_t *controller, int app_id) {
     if (w <= 0 || h <= 0) {
         w = lv_disp_get_hor_res(NULL);
         h = lv_disp_get_ver_res(NULL);
+    }
+    /* Keep hero textures small enough for webOS TV memory limits. */
+    if (w > HERO_COVER_MAX_WIDTH || h > HERO_COVER_MAX_HEIGHT) {
+        lv_coord_t nw = w;
+        lv_coord_t nh = h;
+        if (nw > HERO_COVER_MAX_WIDTH) {
+            nh = (lv_coord_t) ((int32_t) nh * HERO_COVER_MAX_WIDTH / nw);
+            nw = HERO_COVER_MAX_WIDTH;
+        }
+        if (nh > HERO_COVER_MAX_HEIGHT) {
+            nw = (lv_coord_t) ((int32_t) nw * HERO_COVER_MAX_HEIGHT / nh);
+            nh = HERO_COVER_MAX_HEIGHT;
+        }
+        w = LV_MAX(nw, 1);
+        h = LV_MAX(nh, 1);
     }
     coverloader_display(controller->coverloader, &controller->uuid, app_id,
                         controller->hero_bg, w, h);

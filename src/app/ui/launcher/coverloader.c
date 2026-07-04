@@ -81,18 +81,19 @@ static bool coverloader_fetch(coverloader_req_t *req);
 
 static void coverloader_run_on_main(img_loader_t *loader, img_loader_run_on_main_fn fn, void *args);
 
+static void img_set_cover(lv_obj_t *obj, memcache_item_t *src);
+
+static bool coverloader_is_appitem(const lv_obj_t *obj);
+
+static void coverloader_unlink_memcache_src(lv_obj_t *obj);
+
+static void coverloader_apply_plain(lv_obj_t *obj, memcache_item_t *src);
+
 static void img_loader_start_cb(coverloader_req_t *req);
 
 static void img_loader_result_cb(coverloader_req_t *req);
 
 static void img_loader_cancel_cb(coverloader_req_t *req);
-
-/**
- *
- * @param obj lv_img instance
- * @param src loaded image, NULL will fallback to default cover
- */
-static void img_set_cover(lv_obj_t *obj, memcache_item_t *src);
 
 static struct memcache_item_t *memcache_item_new();
 
@@ -420,6 +421,9 @@ static void coverloader_run_on_main(img_loader_t *loader, img_loader_run_on_main
 }
 
 static void img_loader_start_cb(coverloader_req_t *req) {
+    if (!coverloader_is_appitem(req->target)) {
+        return;
+    }
     appitem_viewholder_t *holder = req->target->user_data;
     img_set_cover(req->target, NULL);
     lv_obj_add_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
@@ -428,19 +432,20 @@ static void img_loader_start_cb(coverloader_req_t *req) {
 static void img_loader_result_cb(coverloader_req_t *req) {
     req->task = NULL;
     coverloader_t *loader = req->loader;
-    if (req->target == NULL) {
-        goto done;
+    if (req->target != NULL) {
+        lv_obj_remove_event_cb(req->target, target_deleted_cb);
+        if (coverloader_is_appitem(req->target)) {
+            appitem_viewholder_t *holder = req->target->user_data;
+            img_set_cover(req->target, req->src);
+            if (req->src) {
+                lv_obj_add_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_clear_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            coverloader_apply_plain(req->target, req->src);
+        }
     }
-
-    lv_obj_remove_event_cb(req->target, target_deleted_cb);
-    appitem_viewholder_t *holder = req->target->user_data;
-    img_set_cover(req->target, req->src);
-    if (req->src) {
-        lv_obj_add_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_clear_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
-    }
-    done:
     loader->reqlist = reqlist_remove(loader->reqlist, req);
     coverloader_req_free(req);
     coverloader_unref(loader);
@@ -459,29 +464,48 @@ static void img_loader_cancel_cb(coverloader_req_t *req) {
 
 static void img_set_cover(lv_obj_t *obj, memcache_item_t *src) {
     appitem_viewholder_t *holder = lv_obj_get_user_data(obj);
-
-    /* If the old src is not default cover, assume it's memcache item and unref this obj from it */
-    const void *old_src = lv_img_get_src(obj);
-    bool skip_add_del_cb = false;
-    if (old_src != NULL && lv_img_src_get_type(old_src) == LV_IMG_SRC_VARIABLE) {
-        const memcache_item_t *old_img = old_src;
-        /* for memcache item, src.data is pointer to data */
-        if (old_img->src.data == (const void *) &old_img->data && old_img->src.data_size == sizeof(lv_sdl_img_data_t)) {
-            memcache_item_unref_obj((memcache_item_t *) old_img, obj);
-            skip_add_del_cb = true;
-        }
+    if (holder == NULL || holder->styles == NULL) {
+        coverloader_apply_plain(obj, src);
+        return;
     }
+
+    coverloader_unlink_memcache_src(obj);
 
     if (src != NULL) {
         lv_img_set_src(obj, src);
         memcache_item_ref_obj(src, obj);
-        // If the object is deleted, mark the src orphaned. So it will not access obj when recycled.
-        if (!skip_add_del_cb) {
-            lv_obj_add_event_cb(obj, target_src_unlink_cb, LV_EVENT_DELETE, NULL);
-        }
+        lv_obj_add_event_cb(obj, target_src_unlink_cb, LV_EVENT_DELETE, NULL);
     } else {
         lv_img_set_src(obj, &holder->styles->defcover_src);
         lv_obj_remove_event_cb(obj, target_src_unlink_cb);
+    }
+}
+
+static bool coverloader_is_appitem(const lv_obj_t *obj) {
+    if (obj == NULL) {
+        return false;
+    }
+    appitem_viewholder_t *holder = lv_obj_get_user_data(obj);
+    return holder != NULL && holder->styles != NULL && holder->controller != NULL;
+}
+
+static void coverloader_unlink_memcache_src(lv_obj_t *obj) {
+    const void *old_src = lv_img_get_src(obj);
+    if (old_src == NULL || lv_img_src_get_type(old_src) != LV_IMG_SRC_VARIABLE) {
+        return;
+    }
+    const memcache_item_t *old_img = old_src;
+    if (old_img->src.data == (const void *) &old_img->data && old_img->src.data_size == sizeof(lv_sdl_img_data_t)) {
+        memcache_item_unref_obj((memcache_item_t *) old_img, obj);
+    }
+}
+
+static void coverloader_apply_plain(lv_obj_t *obj, memcache_item_t *src) {
+    coverloader_unlink_memcache_src(obj);
+    if (src != NULL) {
+        lv_img_set_src(obj, src);
+        memcache_item_ref_obj(src, obj);
+        lv_obj_add_event_cb(obj, target_src_unlink_cb, LV_EVENT_DELETE, NULL);
     }
 }
 
@@ -500,10 +524,14 @@ static void memcache_item_free(memcache_item_t *item) {
     _LV_LL_READ(&item->objs, i) {
         lv_obj_t *obj = *i;
         if (obj == NULL) { continue; }
-        appitem_viewholder_t *holder = lv_obj_get_user_data(obj);
-        lv_img_set_src(obj, &holder->styles->defcover_src);
+        if (coverloader_is_appitem(obj)) {
+            appitem_viewholder_t *holder = lv_obj_get_user_data(obj);
+            lv_img_set_src(obj, &holder->styles->defcover_src);
+            lv_obj_clear_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_img_set_src(obj, NULL);
+        }
         lv_obj_remove_event_cb(obj, target_src_unlink_cb);
-        lv_obj_clear_flag(holder->title, LV_OBJ_FLAG_HIDDEN);
     }
     SDL_DestroyTexture(item->data.data.texture);
 

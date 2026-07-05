@@ -46,9 +46,7 @@ static void launcher_layout_settings_layer(launcher_fragment_t *controller, lv_o
     }
     lv_obj_set_size(controller->settings_layer, w, h - bar_h);
     lv_obj_align(controller->settings_layer, LV_ALIGN_TOP_LEFT, 0, bar_h);
-    if (controller->nav) {
-        lv_obj_move_foreground(controller->nav);
-    }
+    lv_obj_move_foreground(controller->settings_layer);
 }
 
 static void launcher_shell_resized(lv_event_t *event) {
@@ -194,10 +192,10 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_border_width(detail, 0, 0);
     lv_obj_add_event_cb(detail, detail_group_add, LV_EVENT_CHILD_CREATED, controller);
 
-    /* Settings overlay: below the home top bar, above the game rail (not full screen). */
+    /* Settings overlay: floats over the game grid, below the top bar. */
     lv_obj_t *settings_layer = lv_obj_create(shell);
     lv_obj_remove_style_all(settings_layer);
-    lv_obj_add_flag(settings_layer, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(settings_layer, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_clear_flag(settings_layer, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(settings_layer, LV_OPA_TRANSP, 0);
     lv_obj_add_event_cb(shell, launcher_shell_resized, LV_EVENT_SIZE_CHANGED, controller);

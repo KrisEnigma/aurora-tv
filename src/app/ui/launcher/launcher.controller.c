@@ -610,7 +610,6 @@ static void open_settings(lv_event_t *event) {
     self->settings_fragment = fragment;
     lv_obj_clear_flag(self->settings_layer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(self->settings_layer);
-    lv_obj_move_foreground(self->nav);
 }
 
 static void show_decoder_error() {

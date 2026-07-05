@@ -22,6 +22,7 @@ typedef struct video_pane_t {
     lv_obj_t *idr_refresh_slider;
     lv_obj_t *idr_refresh_hint;
     int idr_refresh_slider_value;
+    bool idr_refresh_on;
 
     pref_dropdown_string_entry_t *vdec_entries;
     int vdec_entries_len;
@@ -46,6 +47,8 @@ static void hdr_state_update(video_pane_t *controller);
 static void idr_refresh_state_update(video_pane_t *controller);
 
 static void idr_refresh_checkbox_cb(lv_event_t *e);
+
+static void idr_checkbox_activate(lv_event_t *e);
 
 static void idr_refresh_hevc_cb(lv_event_t *e);
 
@@ -142,6 +145,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     controller->idr_refresh_slider_value = app_configuration->idr_refresh_interval_sec >= 2
             ? app_configuration->idr_refresh_interval_sec
             : 10;
+    pref_checkbox_prepare_for_dpad(idr_checkbox);
     lv_obj_t *idr_slider = pref_slider(view, &controller->idr_refresh_slider_value, 2, 60, 1);
     controller->idr_refresh_slider = idr_slider;
     lv_obj_t *idr_hint = pref_desc_label(view,
@@ -149,7 +153,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                "Off by default; use 10–30 s if you see blockiness or color smearing."),
         false);
     controller->idr_refresh_hint = idr_hint;
-    lv_obj_add_event_cb(idr_checkbox, idr_refresh_checkbox_cb, LV_EVENT_VALUE_CHANGED, controller);
+    lv_obj_add_event_cb(idr_checkbox, idr_checkbox_activate, LV_EVENT_CLICKED, controller);
+    lv_obj_add_event_cb(idr_checkbox, idr_checkbox_activate, LV_EVENT_KEY, controller);
     lv_obj_add_event_cb(idr_slider, idr_refresh_slider_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hevc_checkbox, idr_refresh_hevc_cb, LV_EVENT_VALUE_CHANGED, controller);
     idr_refresh_state_update(controller);
@@ -211,6 +216,7 @@ static void idr_refresh_state_update(video_pane_t *controller) {
     const bool hevc_capable = (app->ss4s.video_cap.codecs & SS4S_VIDEO_H265) != 0;
     const bool hevc_on = app_configuration->hevc && hevc_capable;
     const bool refresh_on = app_configuration->idr_refresh_interval_sec >= 2;
+    controller->idr_refresh_on = refresh_on;
     if (refresh_on) {
         lv_obj_add_state(controller->idr_refresh_checkbox, LV_STATE_CHECKED);
     } else {
@@ -235,6 +241,23 @@ static void idr_refresh_state_update(video_pane_t *controller) {
                                      "long-session artifact drift. Off by default."));
         }
     }
+}
+
+static void idr_checkbox_activate(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_KEY && lv_event_get_key(e) != LV_KEY_ENTER) {
+        return;
+    }
+    if (code != LV_EVENT_CLICKED && code != LV_EVENT_KEY) {
+        return;
+    }
+    lv_obj_t *cb = lv_event_get_current_target(e);
+    if (lv_obj_has_state(cb, LV_STATE_CHECKED)) {
+        lv_obj_clear_state(cb, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_state(cb, LV_STATE_CHECKED);
+    }
+    idr_refresh_checkbox_cb(e);
 }
 
 static void idr_refresh_checkbox_cb(lv_event_t *e) {

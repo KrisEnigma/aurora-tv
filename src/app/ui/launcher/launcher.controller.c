@@ -61,19 +61,11 @@ static bool launcher_close_profile_dropdown(launcher_fragment_t *fragment, lv_ob
 
 static void cb_server_btn_clicked(lv_event_t *event);
 
-static void menu_open_settings(launcher_fragment_t *fragment);
-
 static void open_manual_add(lv_event_t *event);
 
 static void open_settings(lv_event_t *event);
 
 static void open_help(lv_event_t *event);
-
-static void open_menu(lv_event_t *event);
-
-static void menu_item_clicked(lv_event_t *event);
-
-static apps_fragment_t *launcher_get_apps(launcher_fragment_t *controller);
 
 static void select_pc(launcher_fragment_t *controller, const uuidstr_t *uuid);
 
@@ -200,7 +192,10 @@ static void launcher_view_init(lv_fragment_t *self, lv_obj_t *view) {
 
     /* Top-bar action buttons. Existing handlers are reused untouched. */
     lv_obj_add_event_cb(fragment->server_btn, cb_server_btn_clicked, LV_EVENT_CLICKED, fragment);
-    lv_obj_add_event_cb(fragment->menu_btn, open_menu, LV_EVENT_CLICKED, fragment);
+    lv_obj_add_event_cb(fragment->add_btn, open_manual_add, LV_EVENT_CLICKED, fragment);
+    lv_obj_add_event_cb(fragment->pref_btn, open_settings, LV_EVENT_CLICKED, fragment);
+    lv_obj_add_event_cb(fragment->help_btn, open_help, LV_EVENT_CLICKED, fragment);
+    lv_obj_add_event_cb(fragment->quit_btn, app_quit_confirm, LV_EVENT_CLICKED, fragment);
 
     populate_selected_host(fragment);
 
@@ -384,12 +379,7 @@ static void cb_detail_cancel(lv_event_t *event) {
 static void cb_detail_key(lv_event_t *event) {
     launcher_fragment_t *fragment = lv_event_get_user_data(event);
     if (lv_event_get_key(event) == LV_KEY_UP) {
-        apps_fragment_t *apps = launcher_get_apps(fragment);
-        if (apps != NULL) {
-            apps_focus_filter_bar(apps);
-        } else {
-            focus_topbar(fragment);
-        }
+        focus_topbar(fragment);
     }
 }
 
@@ -446,10 +436,7 @@ static void launcher_profile_dropdown_key_preprocess(lv_event_t *event) {
             lv_event_stop_processing(event);
             return;
         case LV_KEY_DOWN: {
-            apps_fragment_t *apps = launcher_get_apps(fragment);
-            if (apps != NULL) {
-                apps_focus_filter_bar(apps);
-            }
+            focus_detail(fragment);
             lv_event_stop_processing(event);
             return;
         }
@@ -519,15 +506,18 @@ static void cb_topbar_key(lv_event_t *event) {
             lv_group_focus_next(fragment->nav_group);
             break;
         }
-        case LV_KEY_DOWN: {
-            apps_fragment_t *apps = launcher_get_apps(fragment);
-            if (apps != NULL) {
-                apps_focus_filter_bar(apps);
+        case LV_KEY_UP: {
+            lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
+                                                                                   fragment->detail);
+            if (detail_fragment) {
+                focus_detail(fragment);
             }
             break;
         }
-        default:
+        case LV_KEY_DOWN: {
+            focus_detail(fragment);
             break;
+        }
     }
 }
 
@@ -610,7 +600,17 @@ static void open_manual_add(lv_event_t *event) {
 }
 
 static void open_settings(lv_event_t *event) {
-    menu_open_settings(lv_event_get_user_data(event));
+    launcher_fragment_t *self = lv_event_get_user_data(event);
+    if (self->settings_fragment) {
+        return;
+    }
+    settings_open_args_t sargs = {.app = self->global, .launcher = self};
+    lv_fragment_t *fragment = lv_fragment_create(&settings_controller_cls, &sargs);
+    lv_fragment_create_obj(fragment, self->settings_layer);
+    self->settings_fragment = fragment;
+    lv_obj_clear_flag(self->settings_layer, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(self->settings_layer);
+    lv_obj_move_foreground(self->nav);
 }
 
 static void show_decoder_error() {
@@ -663,82 +663,4 @@ static void populate_selected_host(launcher_fragment_t *controller) {
             break;
         }
     }
-}
-
-static apps_fragment_t *launcher_get_apps(launcher_fragment_t *controller) {
-    if (!controller || !controller->detail) {
-        return NULL;
-    }
-    lv_fragment_t *detail = lv_fragment_manager_find_by_container(controller->base.child_manager, controller->detail);
-    if (!detail) {
-        return NULL;
-    }
-    return (apps_fragment_t *) detail;
-}
-
-static void menu_item_clicked(lv_event_t *event) {
-    lv_obj_t *target = lv_event_get_target(event);
-    if (target->parent != lv_event_get_current_target(event)) {
-        return;
-    }
-    launcher_fragment_t *fragment = lv_event_get_user_data(event);
-    typedef void (*menu_fn)(launcher_fragment_t *);
-    menu_fn fn = lv_obj_get_user_data(target);
-    lv_obj_t *mbox = lv_obj_get_parent(lv_event_get_current_target(event));
-    if (mbox) {
-        lv_msgbox_close(mbox);
-    }
-    if (fn != NULL) {
-        fn(fragment);
-    }
-}
-
-static void menu_open_settings(launcher_fragment_t *fragment) {
-    if (fragment->settings_fragment) {
-        return;
-    }
-    settings_open_args_t sargs = {.app = fragment->global, .launcher = fragment};
-    lv_fragment_t *settings = lv_fragment_create(&settings_controller_cls, &sargs);
-    lv_fragment_create_obj(settings, fragment->settings_layer);
-    fragment->settings_fragment = settings;
-    lv_obj_clear_flag(fragment->settings_layer, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void menu_open_add(launcher_fragment_t *fragment) {
-    LV_UNUSED(fragment);
-    lv_fragment_t *dialog = lv_fragment_create(&add_dialog_class, NULL);
-    lv_obj_t *msgbox = lv_fragment_create_obj(dialog, NULL);
-    lv_obj_add_event_cb(msgbox, ui_cb_destroy_fragment, LV_EVENT_DELETE, dialog);
-}
-
-static void menu_open_help(launcher_fragment_t *fragment) {
-    LV_UNUSED(fragment);
-    help_dialog_create();
-}
-
-static void menu_open_quit(launcher_fragment_t *fragment) {
-    LV_UNUSED(fragment);
-    app_quit_confirm();
-}
-
-static void open_menu(lv_event_t *event) {
-    launcher_fragment_t *fragment = lv_event_get_user_data(event);
-    lv_obj_t *mbox = lv_msgbox_create(NULL, locstr("Menu"), NULL, NULL, false);
-    lv_obj_t *content = lv_msgbox_get_content(mbox);
-    lv_obj_add_flag(content, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_add_event_cb(content, menu_item_clicked, LV_EVENT_SHORT_CLICKED, fragment);
-
-    lv_obj_t *settings_btn = lv_list_add_btn(content, NULL, locstr("Settings"));
-    lv_obj_add_flag(settings_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_user_data(settings_btn, menu_open_settings);
-    lv_obj_t *help_btn = lv_list_add_btn(content, NULL, locstr("Help"));
-    lv_obj_set_user_data(help_btn, menu_open_help);
-    lv_obj_t *add_btn = lv_list_add_btn(content, NULL, locstr("Add host"));
-    lv_obj_set_user_data(add_btn, menu_open_add);
-    lv_obj_t *quit_btn = lv_list_add_btn(content, NULL, locstr("Quit"));
-    lv_obj_set_user_data(quit_btn, menu_open_quit);
-    lv_obj_t *cancel_btn = lv_list_add_btn(content, NULL, locstr("Cancel"));
-    lv_obj_set_user_data(cancel_btn, NULL);
-    lv_obj_center(mbox);
 }

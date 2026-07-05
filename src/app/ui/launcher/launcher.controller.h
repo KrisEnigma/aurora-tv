@@ -16,6 +16,9 @@ typedef struct launcher_fragment_args_t {
     const app_launch_params_t *params;
 } launcher_fragment_args_t;
 
+/** Height of the home top bar (dp); settings overlay sits below this band. */
+#define LAUNCHER_TOPBAR_DPX 60
+
 typedef struct launcher_fragment_t {
     lv_fragment_t base;
 
@@ -36,7 +39,7 @@ typedef struct launcher_fragment_t {
     lv_obj_t *server_btn;
     lv_obj_t *server_label;
 
-    lv_obj_t *menu_btn;
+    lv_obj_t *add_btn, *pref_btn, *help_btn, *quit_btn;
 
     /* Focus groups: nav_group for top-bar buttons, detail_group for game rail items. */
     lv_group_t *nav_group, *detail_group;

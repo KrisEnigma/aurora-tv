@@ -19,8 +19,12 @@
 #include "lvgl/theme/lv_theme_moonlight.h"
 #include "lvgl/theme/lv_theme_moonlight_colors.h"
 
-#define TOPBAR_HEIGHT 60
+#define TOPBAR_HEIGHT LAUNCHER_TOPBAR_DPX
 #define TOPBAR_BTN_SIZE 40
+
+static void launcher_layout_settings_layer(launcher_fragment_t *controller, lv_obj_t *shell);
+
+static void launcher_shell_resized(lv_event_t *event);
 
 static void detail_group_add(lv_event_t *event);
 
@@ -29,6 +33,28 @@ static lv_obj_t *create_topbar_icon_btn(launcher_fragment_t *controller, lv_obj_
 static void launcher_profile_changed(lv_event_t *event);
 
 static void launcher_refresh_profile_dropdown(launcher_fragment_t *controller);
+
+static void launcher_layout_settings_layer(launcher_fragment_t *controller, lv_obj_t *shell) {
+    if (!controller || !controller->settings_layer || !shell) {
+        return;
+    }
+    lv_coord_t w = lv_obj_get_width(shell);
+    lv_coord_t h = lv_obj_get_height(shell);
+    lv_coord_t bar_h = LV_DPX(TOPBAR_HEIGHT);
+    if (w <= 0 || h <= bar_h) {
+        return;
+    }
+    lv_obj_set_size(controller->settings_layer, w, h - bar_h);
+    lv_obj_align(controller->settings_layer, LV_ALIGN_TOP_LEFT, 0, bar_h);
+    if (controller->nav) {
+        lv_obj_move_foreground(controller->nav);
+    }
+}
+
+static void launcher_shell_resized(lv_event_t *event) {
+    launcher_fragment_t *controller = lv_event_get_user_data(event);
+    launcher_layout_settings_layer(controller, lv_event_get_target(event));
+}
 
 lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     launcher_fragment_t *controller = (launcher_fragment_t *) self;
@@ -101,7 +127,7 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_t *title_label = lv_label_create(topbar);
     lv_obj_set_style_text_font(title_label, lv_theme_get_font_large(topbar), 0);
     lv_obj_set_style_text_color(title_label, ml_color_hex(ML_COLOR_TEXT), 0);
-    lv_label_set_text_static(title_label, "Aurora");
+    lv_label_set_text_static(title_label, "AURORA");
 
     controller->profile_dropdown = lv_dropdown_create(topbar);
     lv_obj_set_style_max_width(controller->profile_dropdown, LV_DPX(160), 0);
@@ -147,8 +173,11 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_label_set_text_static(srv_chevron, MAT_SYMBOL_ARROW_DROP_DOWN);
     lv_obj_clear_flag(srv_chevron, LV_OBJ_FLAG_CLICKABLE);
 
-    /* Right-side: server selector + hamburger menu. */
-    lv_obj_t *menu_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_MENU);
+    /* Right-side action buttons (icon only). */
+    lv_obj_t *add_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_ADD_TO_QUEUE);
+    lv_obj_t *help_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_HELP);
+    lv_obj_t *pref_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_SETTINGS);
+    lv_obj_t *quit_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_CLOSE);
 
     /* ---------------- Detail (game rail + hero background) ---------------- */
     lv_obj_t *detail = lv_obj_create(detail_stack);
@@ -160,20 +189,24 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_border_width(detail, 0, 0);
     lv_obj_add_event_cb(detail, detail_group_add, LV_EVENT_CHILD_CREATED, controller);
 
-    lv_obj_t *settings_layer = lv_obj_create(detail_stack);
+    /* Settings overlay: below the home top bar, above the game rail (not full screen). */
+    lv_obj_t *settings_layer = lv_obj_create(shell);
     lv_obj_remove_style_all(settings_layer);
-    lv_obj_set_size(settings_layer, LV_PCT(100), LV_PCT(100));
-    lv_obj_align(settings_layer, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_add_flag(settings_layer, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(settings_layer, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(settings_layer, LV_OPA_TRANSP, 0);
+    lv_obj_add_event_cb(shell, launcher_shell_resized, LV_EVENT_SIZE_CHANGED, controller);
 
     controller->nav = topbar;
     controller->detail = detail;
     controller->settings_layer = settings_layer;
     controller->server_btn = server_btn;
     controller->server_label = server_label;
-    controller->menu_btn = menu_btn;
+    controller->add_btn = add_btn;
+    controller->help_btn = help_btn;
+    controller->pref_btn = pref_btn;
+    controller->quit_btn = quit_btn;
+    launcher_layout_settings_layer(controller, shell);
     return win;
 }
 

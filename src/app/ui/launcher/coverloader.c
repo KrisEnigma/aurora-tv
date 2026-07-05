@@ -21,6 +21,7 @@
 typedef struct memcache_key_t {
     int id;
     lv_coord_t target_width, target_height;
+    uint8_t cover_fill;
 } memcache_key_t;
 
 typedef struct memcache_item_t {
@@ -223,9 +224,7 @@ static bool coverloader_memcache_get(coverloader_req_t *req) {
     key.id = req->id;
     key.target_width = req->target_width;
     key.target_height = req->target_height;
-
-    (void) key.target_width;
-    (void) key.target_height;
+    key.cover_fill = !coverloader_is_appitem(req->target);
 
     lv_lru_get(req->loader->mem_cache, &key, sizeof(key), (void **) &result);
     req->src = result;
@@ -242,7 +241,8 @@ static void coverloader_memcache_put(coverloader_req_t *req) {
     memcache_key_t key = {
             .id = req->id,
             .target_width = req->target_width,
-            .target_height = req->target_height
+            .target_height = req->target_height,
+            .cover_fill = !coverloader_is_appitem(req->target),
     };
     lv_lru_get(req->loader->mem_cache, &key, sizeof(key), (void **) &result);
     if (result == NULL) {
@@ -339,7 +339,11 @@ static bool coverloader_filecache_get(coverloader_req_t *req) {
 
     const double scale_w = tex_w / (double) sw;
     const double scale_h = tex_h / (double) sh;
-    const double scale = scale_w < scale_h ? scale_w : scale_h;
+    /* Grid tiles: letterbox (contain). Hero background: crop to fill the viewport. */
+    const bool cover_fill = !coverloader_is_appitem(req->target);
+    const double scale = cover_fill
+                                 ? (scale_w > scale_h ? scale_w : scale_h)
+                                 : (scale_w < scale_h ? scale_w : scale_h);
     int fit_w = (int) (sw * scale + 0.5);
     int fit_h = (int) (sh * scale + 0.5);
     if (fit_w < 1) {

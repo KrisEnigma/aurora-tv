@@ -27,10 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define APPS_RAIL_COLS         8
-#define APPS_RAIL_VISIBLE_ROWS 2
-#define HERO_COVER_MAX_WIDTH   1280
-#define HERO_COVER_MAX_HEIGHT  720
+#define APPS_GRID_COLS 8
+#define APPS_GRID_ROWS 3
 
 typedef void (*action_cb_t)(apps_fragment_t *controller, lv_obj_t *buttons, uint16_t index);
 
@@ -134,10 +132,6 @@ static void show_error(apps_fragment_t *fragment, const char *title, const char 
 
 static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t *list);
 
-static void apps_layout_rail(apps_fragment_t *controller);
-
-static void apps_set_playnite_chrome_visible(apps_fragment_t *controller, bool visible);
-
 static apps_fragment_t *current_instance = NULL;
 
 const static lv_gridview_adapter_t apps_adapter = {
@@ -199,48 +193,23 @@ static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_flag(view, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_size(view, LV_PCT(100), LV_PCT(100));
     lv_obj_set_scroll_dir(view, LV_DIR_NONE);
-    lv_obj_set_style_bg_opa(view, LV_OPA_TRANSP, 0);
-
-    lv_obj_t *hero_bg = controller->hero_bg = lv_img_create(view);
-    lv_obj_remove_style_all(hero_bg);
-    lv_obj_set_size(hero_bg, LV_PCT(100), LV_PCT(100));
-    lv_obj_align(hero_bg, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_img_set_size_mode(hero_bg, LV_IMG_SIZE_MODE_VIRTUAL);
-    lv_obj_set_style_img_opa(hero_bg, LV_OPA_80, 0);
-    lv_obj_clear_flag(hero_bg, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_move_background(hero_bg);
-
-    lv_obj_t *hero_dim = controller->hero_dim = lv_obj_create(view);
-    lv_obj_remove_style_all(hero_dim);
-    lv_obj_set_size(hero_dim, LV_PCT(100), LV_PCT(100));
-    lv_obj_align(hero_dim, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(hero_dim, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(hero_dim, LV_OPA_50, 0);
-    lv_obj_clear_flag(hero_dim, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *hero_title = controller->hero_title = lv_label_create(view);
-    lv_obj_set_width(hero_title, LV_PCT(65));
-    lv_obj_set_style_text_font(hero_title, lv_theme_get_font_large(view), 0);
-    lv_obj_set_style_text_color(hero_title, ml_color_hex(ML_COLOR_TEXT), 0);
-    lv_label_set_long_mode(hero_title, LV_LABEL_LONG_DOT);
-    lv_label_set_text(hero_title, "");
-    lv_obj_align(hero_title, LV_ALIGN_LEFT_MID, LV_DPX(48), LV_DPX(-48));
+    lv_obj_set_style_bg_color(view, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(view, LV_OPA_COVER, 0);
 
     lv_obj_t *applist = controller->applist = lv_gridview_create(view);
     lv_obj_add_flag(applist, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_scroll_dir(applist, LV_DIR_VER);
     lv_obj_clear_flag(applist, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
     lv_obj_set_scrollbar_mode(applist, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_pad_hor(applist, lv_dpx(32), 0);
-    lv_obj_set_style_pad_top(applist, lv_dpx(8), 0);
-    lv_obj_set_style_pad_bottom(applist, lv_dpx(20), 0);
-    lv_obj_set_style_pad_gap(applist, lv_dpx(14), 0);
+    lv_obj_set_style_pad_hor(applist, lv_dpx(24), 0);
+    lv_obj_set_style_pad_ver(applist, lv_dpx(16), 0);
+    lv_obj_set_style_pad_gap(applist, lv_dpx(12), 0);
     lv_obj_set_style_radius(applist, 0, 0);
     lv_obj_set_style_border_side(applist, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_bg_opa(applist, LV_OPA_TRANSP, 0);
     lv_obj_set_style_anim_time(applist, 220, 0);
-    lv_obj_set_width(applist, LV_PCT(100));
-    lv_obj_align(applist, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(applist, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(applist, LV_ALIGN_TOP_MID, 0, 0);
     lv_gridview_set_key_focus_clamp(applist, true);
     lv_obj_update_layout(applist);
 
@@ -328,34 +297,40 @@ static void update_grid_config(apps_fragment_t *controller) {
     if (!applist) {
         return;
     }
+    lv_obj_t *view = lv_obj_get_parent(applist);
+    lv_obj_update_layout(view);
     lv_obj_update_layout(applist);
-    lv_coord_t applist_width = lv_obj_get_width(applist);
-    if (applist_width <= 0) {
-        applist_width = lv_disp_get_hor_res(NULL);
+    lv_coord_t view_w = lv_obj_get_width(view);
+    lv_coord_t view_h = lv_obj_get_height(view);
+    if (view_w <= 0) {
+        view_w = lv_disp_get_hor_res(NULL);
     }
-    int col_count = APPS_RAIL_COLS;
+    if (view_h <= 0) {
+        view_h = lv_disp_get_ver_res(NULL);
+    }
+    const int col_count = APPS_GRID_COLS;
     lv_coord_t pad_l = lv_obj_get_style_pad_left(applist, 0);
     lv_coord_t pad_r = lv_obj_get_style_pad_right(applist, 0);
-    lv_coord_t gap = lv_obj_get_style_pad_column(applist, 0);
-    lv_coord_t col_width = (applist_width - pad_l - pad_r - gap * (col_count - 1)) / col_count;
+    lv_coord_t pad_t = lv_obj_get_style_pad_top(applist, 0);
+    lv_coord_t pad_b = lv_obj_get_style_pad_bottom(applist, 0);
+    lv_coord_t gap_col = lv_obj_get_style_pad_column(applist, 0);
+    lv_coord_t gap_row = lv_obj_get_style_pad_row(applist, 0);
+    lv_coord_t col_width = (view_w - pad_l - pad_r - gap_col * (col_count - 1)) / col_count;
+    lv_coord_t row_height = (view_h - pad_t - pad_b - gap_row * (APPS_GRID_ROWS - 1)) / APPS_GRID_ROWS;
     if (col_width < LV_DPX(40)) {
-        col_width = LV_MAX(LV_DPX(40), applist_width / col_count);
+        col_width = LV_MAX(LV_DPX(40), view_w / col_count);
+    }
+    if (row_height < LV_DPX(40)) {
+        row_height = LV_MAX(LV_DPX(40), view_h / APPS_GRID_ROWS);
     }
     controller->col_count = col_count;
     controller->col_width = col_width;
-    lv_coord_t row_height = (col_width * 4) / 3;
     controller->col_height = row_height;
-    lv_coord_t pad_row = lv_obj_get_style_pad_row(applist, 0);
-    lv_coord_t pad_top = lv_obj_get_style_pad_top(applist, 0);
-    lv_coord_t pad_bottom = lv_obj_get_style_pad_bottom(applist, 0);
-    controller->rail_height = row_height * APPS_RAIL_VISIBLE_ROWS + pad_row * (APPS_RAIL_VISIBLE_ROWS - 1)
-                              + pad_top + pad_bottom;
-    lv_obj_set_height(applist, controller->rail_height);
+    lv_obj_set_size(applist, LV_PCT(100), LV_PCT(100));
     lv_gridview_set_config(applist, col_count, row_height, LV_GRID_ALIGN_CENTER, LV_GRID_ALIGN_CENTER);
 
     controller->appitem_style.defcover_src.header.w = col_width;
     controller->appitem_style.defcover_src.header.h = row_height;
-    apps_layout_rail(controller);
 }
 
 static void on_destroy_view(lv_fragment_t *self, lv_obj_t *view) {
@@ -520,7 +495,6 @@ static void update_view_state(apps_fragment_t *controller) {
 }
 
 static void show_progress(apps_fragment_t *fragment) {
-    apps_set_playnite_chrome_visible(fragment, false);
     lv_obj_add_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
@@ -532,7 +506,6 @@ static void show_progress(apps_fragment_t *fragment) {
 }
 
 static void show_ok(apps_fragment_t *fragment) {
-    apps_set_playnite_chrome_visible(fragment, true);
     lv_obj_clear_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
@@ -544,14 +517,9 @@ static void show_ok(apps_fragment_t *fragment) {
     }
     int idx = fragment->focus_backup >= 0 ? fragment->focus_backup : 0;
     lv_gridview_focus(fragment->applist, idx);
-    idx = lv_gridview_get_focused_index(fragment->applist);
-    if (idx >= 0 && idx < apps_raw_visible_count(fragment, fragment->apploader_apps)) {
-        apps_on_item_focused(fragment, fragment->apploader_apps->items[idx].base.id);
-    }
 }
 
 static void show_error(apps_fragment_t *fragment, const char *title, const char *hint, const char *detail) {
-    apps_set_playnite_chrome_visible(fragment, false);
     lv_obj_add_flag(fragment->appload, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(fragment->apperror, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(fragment->applist, LV_OBJ_FLAG_HIDDEN);
@@ -907,66 +875,6 @@ static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t 
         }
     }
     return count;
-}
-
-static void apps_layout_rail(apps_fragment_t *controller) {
-    if (!controller->applist) {
-        return;
-    }
-    lv_obj_align(controller->hero_title, LV_ALIGN_LEFT_MID, LV_DPX(48), LV_DPX(-48));
-    lv_obj_align(controller->applist, LV_ALIGN_BOTTOM_MID, 0, 0);
-}
-
-static void apps_set_playnite_chrome_visible(apps_fragment_t *controller, bool visible) {
-    if (!controller->hero_bg) {
-        return;
-    }
-    if (visible) {
-        lv_obj_clear_flag(controller->hero_bg, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(controller->hero_dim, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(controller->hero_title, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(controller->hero_bg, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(controller->hero_dim, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(controller->hero_title, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-void apps_on_item_focused(apps_fragment_t *controller, int app_id) {
-    if (!controller || !controller->hero_bg || !controller->hero_title) {
-        return;
-    }
-    if (controller->apploader_apps == NULL) {
-        return;
-    }
-    const apploader_item_t *app = apploader_list_item_by_id(controller->apploader_apps, app_id);
-    if (app == NULL) {
-        return;
-    }
-    lv_label_set_text(controller->hero_title, app->base.name);
-    lv_coord_t w = lv_obj_get_width(controller->hero_bg);
-    lv_coord_t h = lv_obj_get_height(controller->hero_bg);
-    if (w <= 0 || h <= 0) {
-        w = lv_disp_get_hor_res(NULL);
-        h = lv_disp_get_ver_res(NULL);
-    }
-    /* Keep hero textures small enough for webOS TV memory limits. */
-    if (w > HERO_COVER_MAX_WIDTH || h > HERO_COVER_MAX_HEIGHT) {
-        lv_coord_t nw = w;
-        lv_coord_t nh = h;
-        if (nw > HERO_COVER_MAX_WIDTH) {
-            nh = (lv_coord_t) ((int32_t) nh * HERO_COVER_MAX_WIDTH / nw);
-            nw = HERO_COVER_MAX_WIDTH;
-        }
-        if (nh > HERO_COVER_MAX_HEIGHT) {
-            nw = (lv_coord_t) ((int32_t) nw * HERO_COVER_MAX_HEIGHT / nh);
-            nh = HERO_COVER_MAX_HEIGHT;
-        }
-        w = LV_MAX(nw, 1);
-        h = LV_MAX(nh, 1);
-    }
-    coverloader_display(controller->coverloader, &controller->uuid, app_id,
-                        controller->hero_bg, w, h);
 }
 
 void apps_focus_rail(apps_fragment_t *controller) {

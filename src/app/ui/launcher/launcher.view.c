@@ -73,20 +73,19 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_style_pad_gap(content, 0, 0);
 
-    /* Full-screen shell: hero/detail underneath, transparent top bar overlay. */
+    /* Shell: top bar + game grid (column layout, no overlay). */
     lv_obj_t *shell = lv_obj_create(content);
     lv_obj_remove_style_all(shell);
     lv_obj_set_width(shell, LV_PCT(100));
     lv_obj_set_flex_grow(shell, 1);
     lv_obj_clear_flag(shell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(shell, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(shell, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(shell, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(shell, 0, 0);
+    lv_obj_set_style_pad_gap(shell, 0, 0);
 
-    lv_obj_t *detail_stack = lv_obj_create(shell);
-    lv_obj_remove_style_all(detail_stack);
-    lv_obj_set_size(detail_stack, LV_PCT(100), LV_PCT(100));
-    lv_obj_clear_flag(detail_stack, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(detail_stack, 0);
-
-    /* Two focus groups: nav_group for top-bar buttons, detail_group for game rail items. */
+    /* Two focus groups: nav_group for top-bar buttons, detail_group for game grid items. */
     controller->nav_group = lv_group_create();
     controller->detail_group = lv_group_create();
 
@@ -99,31 +98,30 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_style_set_bg_opa(&controller->topbar_btn_style, LV_OPA_COVER);
     lv_style_set_text_color(&controller->topbar_btn_style, ml_color_hex(ML_COLOR_TEXT));
 
-    /* ---------------- Top bar (transparent overlay; Playnite-style) ---------------- */
+    /* ---------------- Top bar ---------------- */
     lv_obj_t *topbar = lv_obj_create(shell);
     lv_obj_remove_style_all(topbar);
     lv_obj_set_width(topbar, LV_PCT(100));
     lv_obj_set_height(topbar, LV_DPX(TOPBAR_HEIGHT));
-    lv_obj_align(topbar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_move_foreground(topbar);
     lv_obj_set_layout(topbar, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(topbar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(topbar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(topbar, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(topbar, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(topbar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(topbar, 0, 0);
     lv_obj_set_style_pad_hor(topbar, LV_DPX(20), 0);
     lv_obj_set_style_pad_ver(topbar, LV_DPX(8), 0);
-    lv_obj_set_style_pad_gap(topbar, LV_DPX(8), 0);
+    lv_obj_set_style_pad_gap(topbar, LV_DPX(10), 0);
     lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
-    /* Auto-add groupable children to nav_group via the existing helper. */
     lv_obj_add_event_cb(topbar, cb_child_group_add, LV_EVENT_CHILD_CREATED, controller->nav_group);
 
-    /* Logo (left). */
+    /* App icon (same asset as OS launcher icons). */
     lv_obj_t *title_logo = lv_img_create(topbar);
     lv_img_set_src(title_logo, ui_logo_src());
     lv_obj_set_size(title_logo, LV_DPX(NAV_LOGO_SIZE), LV_DPX(NAV_LOGO_SIZE));
+    lv_img_set_size_mode(title_logo, LV_IMG_SIZE_MODE_VIRTUAL);
+    lv_obj_clear_flag(title_logo, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Aurora title (left, next to logo). */
     lv_obj_t *title_label = lv_label_create(topbar);
     lv_obj_set_style_text_font(title_label, lv_theme_get_font_large(topbar), 0);
     lv_obj_set_style_text_color(title_label, ml_color_hex(ML_COLOR_TEXT), 0);
@@ -179,13 +177,20 @@ lv_obj_t *launcher_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_t *pref_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_SETTINGS);
     lv_obj_t *quit_btn = create_topbar_icon_btn(controller, topbar, MAT_SYMBOL_CLOSE);
 
-    /* ---------------- Detail (game rail + hero background) ---------------- */
+    /* ---------------- Game grid (fills remaining space below top bar) ---------------- */
+    lv_obj_t *detail_stack = lv_obj_create(shell);
+    lv_obj_remove_style_all(detail_stack);
+    lv_obj_set_width(detail_stack, LV_PCT(100));
+    lv_obj_set_flex_grow(detail_stack, 1);
+    lv_obj_clear_flag(detail_stack, LV_OBJ_FLAG_SCROLLABLE);
+
     lv_obj_t *detail = lv_obj_create(detail_stack);
     lv_obj_remove_style_all(detail);
     lv_obj_set_width(detail, LV_PCT(100));
     lv_obj_set_height(detail, LV_PCT(100));
     lv_obj_clear_flag(detail, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(detail, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(detail, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(detail, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(detail, 0, 0);
     lv_obj_add_event_cb(detail, detail_group_add, LV_EVENT_CHILD_CREATED, controller);
 

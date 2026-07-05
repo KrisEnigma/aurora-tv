@@ -9,8 +9,6 @@ static void appitem_holder_free_cb(lv_event_t *event);
 
 static void appitem_draw_decor(lv_event_t *e);
 
-static void appitem_selected(lv_event_t *e);
-
 static void appitem_deselected(lv_event_t *e);
 
 #define APPITEM_TRANSIT_MS 220
@@ -33,7 +31,6 @@ lv_obj_t *appitem_view(apps_fragment_t *controller, lv_obj_t *parent) {
     lv_obj_set_style_transition(item, &styles->tr_pressed, LV_STATE_PRESSED | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_transition(item, &styles->tr_released, LV_STATE_DEFAULT);
     lv_obj_add_event_cb(item, appitem_draw_decor, LV_EVENT_DRAW_MAIN, styles);
-    lv_obj_add_event_cb(item, appitem_selected, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(item, appitem_deselected, LV_EVENT_DEFOCUSED, NULL);
 
     lv_obj_t *play_indicator = lv_label_create(item);
@@ -150,12 +147,6 @@ static void appitem_draw_decor(lv_event_t *e) {
     lv_draw_img_dsc_init(&dsc);
     lv_draw_ctx_t *ctx = lv_event_get_draw_ctx(e);
     lv_draw_img(ctx, &dsc, &coords, &styles->fav_indicator_src);
-}
-
-static void appitem_selected(lv_event_t *e) {
-    lv_obj_t *item = lv_event_get_current_target(e);
-    appitem_viewholder_t *holder = lv_obj_get_user_data(item);
-    apps_on_item_focused(holder->controller, holder->app_id);
 }
 
 static void appitem_deselected(lv_event_t *e) {

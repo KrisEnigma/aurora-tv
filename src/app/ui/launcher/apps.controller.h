@@ -38,14 +38,11 @@ typedef struct {
     lv_obj_t *errortitle, *errorhint, *errordetail;
     lv_obj_t *actions;
 
-    lv_obj_t *hero_bg, *hero_dim, *hero_title;
-
     lv_obj_t *quit_progress;
 
     appitem_styles_t appitem_style;
     int col_count;
     lv_coord_t col_width, col_height;
-    lv_coord_t rail_height;
     int focus_backup;
 } apps_fragment_t;
 
@@ -65,8 +62,5 @@ typedef struct {
 
 extern const lv_fragment_class_t apps_controller_class;
 
-/** Update hero background and title when a game tile receives focus. */
-void apps_on_item_focused(apps_fragment_t *controller, int app_id);
-
-/** Move focus into the bottom game rail. */
+/** Move focus into the game grid. */
 void apps_focus_rail(apps_fragment_t *controller);

@@ -72,6 +72,12 @@ static void abr_apply_mode_preset(adaptive_bitrate_service_t *service) {
             }
             break;
     }
+    /* Low initial bitrates can invert the presets (e.g. QUALITY at 3000 kbps
+     * gives min=5000 > max=4500); the tick's clamp order would then RAISE the
+     * bitrate above the user's setting. Normalize so max always wins. */
+    if (service->min_bitrate > service->max_bitrate) {
+        service->min_bitrate = service->max_bitrate;
+    }
 }
 
 static bool abr_set_bitrate(adaptive_bitrate_service_t *service, int kbps, const char *source) {

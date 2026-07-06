@@ -30,6 +30,11 @@ struct adaptive_bitrate_service {
     int stable_seconds;
     int loss_streak;
     Uint32 last_adjust_ticks;
+    /* Backoff for failing gs_set_bitrate calls (host without the /bitrate
+     * endpoint, or transiently unreachable): each failed set doubles the pause
+     * up to 30s so we don't burn a fresh TLS handshake every adjust attempt. */
+    int set_fail_streak;
+    Uint32 set_backoff_until;
 };
 
 const char *abr_mode_to_string(abr_mode_t mode) {
@@ -84,10 +89,25 @@ static bool abr_set_bitrate(adaptive_bitrate_service_t *service, int kbps, const
     if (kbps == service->current_bitrate) {
         return false;
     }
-    int from = service->current_bitrate;
-    if (gs_set_bitrate(service->gs_client, &service->server_copy, kbps) != GS_OK) {
+    Uint32 now = SDL_GetTicks();
+    if (service->set_backoff_until != 0 && now < service->set_backoff_until) {
         return false;
     }
+    int from = service->current_bitrate;
+    if (gs_set_bitrate(service->gs_client, &service->server_copy, kbps) != GS_OK) {
+        if (service->set_fail_streak < 5) {
+            service->set_fail_streak++;
+        }
+        Uint32 delay = 2000u << (service->set_fail_streak - 1);   /* 2/4/8/16/30s */
+        if (delay > 30000u) {
+            delay = 30000u;
+        }
+        service->set_backoff_until = now + delay;
+        commons_log_warn("ABR", "[%s] set %d kbps failed; backing off %u ms", source, kbps, delay);
+        return false;
+    }
+    service->set_fail_streak = 0;
+    service->set_backoff_until = 0;
     service->current_bitrate = kbps;
     commons_log_info("ABR", "[%s] %d kbps -> %d kbps", source, from, kbps);
     return true;
@@ -261,6 +281,7 @@ void adaptive_bitrate_stop(adaptive_bitrate_service_t *service, bool restore) {
      * anyway, so a missed restore is harmless. */
     if (restore) {
         gs_set_total_timeout(service->gs_client, 2);
+        service->set_backoff_until = 0;   /* a clean restore must not be skipped by backoff */
         if (service->current_bitrate != service->initial_bitrate) {
             abr_set_bitrate(service, service->initial_bitrate, "restore");
         }

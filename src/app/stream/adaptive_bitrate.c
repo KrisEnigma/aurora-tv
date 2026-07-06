@@ -179,7 +179,12 @@ static int abr_thread(void *userdata) {
             continue;
         }
 
-        const struct VIDEO_STATS *stats = &vdec_summary_stats;
+        /* Tear-free snapshot: the session thread rewrites vdec_summary_stats
+         * every 1-2s; the seqlock retry in vdec_stats_snapshot guarantees a
+         * consistent copy (a torn read here could cause a spurious 30% cut). */
+        struct VIDEO_STATS stats_snap;
+        vdec_stats_snapshot(&stats_snap);
+        const struct VIDEO_STATS *stats = &stats_snap;
         float packet_loss = stats->totalFrames > 0
             ? (float) stats->networkDroppedFrames / (float) stats->totalFrames * 100.0f
             : 0.0f;

@@ -222,6 +222,10 @@ adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config
     service->current_bitrate = config->initial_bitrate;
     service->mode = config->mode;
     abr_apply_mode_preset(service);
+    /* The GS_CLIENT only has a connect timeout; cap whole transfers too so an
+     * in-flight ABR tick can never stall stop's SDL_WaitThread for long (a
+     * half-open host would otherwise hang a request indefinitely). */
+    gs_set_total_timeout(service->gs_client, 5);
     SDL_AtomicSet(&service->stop, 0);
     service->thread = SDL_CreateThread(abr_thread, "abr", service);
     if (!service->thread) {
@@ -236,7 +240,7 @@ adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config
     return service;
 }
 
-void adaptive_bitrate_stop(adaptive_bitrate_service_t *service) {
+void adaptive_bitrate_stop(adaptive_bitrate_service_t *service, bool restore) {
     if (!service) {
         return;
     }
@@ -244,12 +248,20 @@ void adaptive_bitrate_stop(adaptive_bitrate_service_t *service) {
     if (service->thread) {
         SDL_WaitThread(service->thread, NULL);
     }
-    if (service->current_bitrate != service->initial_bitrate) {
-        abr_set_bitrate(service, service->initial_bitrate, "restore");
-    }
-    if (service->server_supported) {
-        GS_ABR_CONFIG config = {.enabled = false, .min_bitrate = 0, .max_bitrate = 0, .mode = "balanced"};
-        gs_set_abr_mode(service->gs_client, &service->server_copy, &config);
+    /* This runs on the session thread during teardown: only talk to the host
+     * on a clean exit (error/disconnect means it is likely unreachable and
+     * every call below would block on a timeout), and keep even the clean
+     * path short -- the host resets per-session bitrate on the next launch
+     * anyway, so a missed restore is harmless. */
+    if (restore) {
+        gs_set_total_timeout(service->gs_client, 2);
+        if (service->current_bitrate != service->initial_bitrate) {
+            abr_set_bitrate(service, service->initial_bitrate, "restore");
+        }
+        if (service->server_supported) {
+            GS_ABR_CONFIG config = {.enabled = false, .min_bitrate = 0, .max_bitrate = 0, .mode = "balanced"};
+            gs_set_abr_mode(service->gs_client, &service->server_copy, &config);
+        }
     }
     free((void *) service->server_copy.uuid);
     free((void *) service->server_copy.mac);

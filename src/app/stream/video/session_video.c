@@ -30,7 +30,22 @@
 #define DECODER_BUFFER_MAX_SIZE (32 * 1024 * 1024)
 
 /** Slices hint for pipeline decode while later slices still arrive (high bitrate / 120 Hz). */
-#define VDEC_STREAM_SLICES_PER_FRAME 4
+#define VDEC_STREAM_SLICES_MIN 4
+#define VDEC_STREAM_SLICES_MAX 8
+
+static unsigned vdec_slices_for_stream(int width, int height, int fps) {
+    if (fps <= 0) {
+        fps = 60;
+    }
+    const int64_t load = (int64_t) width * (int64_t) height * (int64_t) fps;
+    if (load >= (int64_t) 3840 * 2160 * 90) {
+        return VDEC_STREAM_SLICES_MAX;
+    }
+    if (load >= (int64_t) 2560 * 1440 * 90) {
+        return 6;
+    }
+    return VDEC_STREAM_SLICES_MIN;
+}
 
 static int vdec_stream_target_fps = 60;
 
@@ -83,9 +98,14 @@ void session_video_prepare_stream(void) {
     const bool hevc = app_configuration != NULL && app_configuration->hevc;
     if (hevc) {
         caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC;
-        caps |= CAPABILITY_SLICES_PER_FRAME(VDEC_STREAM_SLICES_PER_FRAME);
-        commons_log_info("Session", "Video SDP caps: RFI + %u slices/frame (HEVC=1)",
-                         (unsigned) VDEC_STREAM_SLICES_PER_FRAME);
+        unsigned slices = VDEC_STREAM_SLICES_MIN;
+        if (app_configuration != NULL) {
+            slices = vdec_slices_for_stream(app_configuration->stream.width,
+                                            app_configuration->stream.height,
+                                            app_configuration->stream.fps);
+        }
+        caps |= CAPABILITY_SLICES_PER_FRAME(slices);
+        commons_log_info("Session", "Video SDP caps: RFI + %u slices/frame (HEVC=1)", slices);
     } else {
         commons_log_info("Session", "Video SDP caps: direct submit only (H.264)");
     }
@@ -343,20 +363,6 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
         vdec_stream_info.has_decoder_latency = true;
     } else {
         dst->avgDecoderLatency = 0;
-    }
-    int queueDepth = 0;
-    if (SS4S_PlayerGetVideoQueueDepth(player, &queueDepth)) {
-        dst->videoQueueDepth = queueDepth;
-        vdec_stream_info.has_queue_depth = true;
-    } else {
-        dst->videoQueueDepth = 0;
-    }
-    int feedTimeUs = 0;
-    if (SS4S_PlayerGetVideoFeedTime(player, &feedTimeUs)) {
-        dst->avgFeedCallMs = (float) feedTimeUs / 1000.0f;
-        vdec_stream_info.has_feed_time = true;
-    } else {
-        dst->avgFeedCallMs = 0;
     }
     vdec_stats_write_end();
     app_bus_post(session->app, (bus_actionfunc) streaming_refresh_stats, NULL);

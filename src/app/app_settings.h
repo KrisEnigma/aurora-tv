@@ -53,10 +53,6 @@ typedef struct app_settings_t {
     bool hevc;
     /** Periodic HEVC IDR refresh interval in seconds (0 = off, min 2 when enabled). */
     int idr_refresh_interval_sec;
-    /** Flush the decoder render queue and request a keyframe when playback falls behind (drops late frames). */
-    bool low_latency_mode;
-    /** Send the full configured bitrate to Sunshine hosts instead of reserving 20% for FEC. */
-    bool full_bitrate;
     bool show_stats_on_start;
     bool show_stats_compact;
     int stick_deadzone;

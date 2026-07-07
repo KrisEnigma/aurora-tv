@@ -53,6 +53,32 @@ Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUIL
 - [Device Manager](https://github.com/webosbrew/dev-manager-desktop) — install the latest `.ipk` from [Releases](https://github.com/GuiDev1994/aurora-tv/releases)
 - [webOS TV CLI](https://webostv.developer.lge.com/develop/tools/cli-installation) — `ares-install com.aurora.gamestream_*_arm.ipk` ([build guide](docs/BUILD_WEBOS.md))
 
+## Build from source (developers)
+
+Cross-compile Aurora for webOS using Docker. **Prerequisites:** Docker Desktop (Windows/macOS) or Docker Engine (Linux).
+
+**Windows (PowerShell):**
+
+```powershell
+.\scripts\webos\build_with_docker.ps1
+```
+
+**Linux / macOS (Docker):**
+
+```bash
+docker run --rm \
+  --dns 8.8.8.8 --dns 1.1.1.1 \
+  -v "$(pwd):/build" \
+  -v "$(pwd)/scripts/webos/docker_build_inner.sh:/docker_build.sh" \
+  -w /build -e CI=1 -e DOCKER_SKIP_SUBMODULES=1 \
+  ubuntu:22.04 \
+  bash -c "sed 's/\r$//' /docker_build.sh | bash"
+```
+
+The `.ipk` is written to `dist/com.aurora.gamestream_<version>_arm.ipk`. To generate a Homebrew manifest locally (optional), install `webosbrew-gen-manifest` once; official [releases](https://github.com/GuiDev1994/aurora-tv/releases) build and publish the manifest via GitHub Actions.
+
+Full build, install, and troubleshooting guide: [docs/BUILD_WEBOS.md](docs/BUILD_WEBOS.md).
+
 ## Credits
 
 - Base: [mariotaku/moonlight-tv](https://github.com/mariotaku/moonlight-tv)

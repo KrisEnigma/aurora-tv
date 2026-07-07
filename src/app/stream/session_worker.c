@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "session_worker.h"
 #include "session_priv.h"
 #include "app.h"
@@ -67,6 +69,13 @@ int session_worker(session_t *session) {
 
     commons_log_info("Session", "Audio %d channels",
                      CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(session->config.stream.audioConfiguration));
+
+    /* The NDL video module reads these on media load, so they must be set before the decoder opens. */
+    if (session->config.low_latency_mode) {
+        setenv("SS4S_NDL_LOW_LATENCY", "1", 1);
+    } else {
+        unsetenv("SS4S_NDL_LOW_LATENCY");
+    }
 
     session->player = SS4S_PlayerOpen();
     SS4S_PlayerSetWaitAudioVideoReady(session->player, true);

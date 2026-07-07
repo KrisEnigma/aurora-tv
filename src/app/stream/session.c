@@ -268,6 +268,7 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     }
     config->vmouse = app_config->virtual_mouse;
     config->hardware_mouse = app_config->hardware_mouse;
+    config->low_latency_mode = app_config->low_latency_mode;
     config->local_audio = app_config->localaudio;
     config->view_only = app_config->viewonly;
     config->sops = app_config->sops;
@@ -339,6 +340,8 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     }
 #endif
     config->stream.encryptionFlags = ENCFLG_AUDIO;
+    /* Only effective on Sunshine hosts; moonlight-common-c ignores it elsewhere. */
+    config->stream.useFullBitrate = app_config->full_bitrate ? 1 : 0;
 }
 
 /**

@@ -37,6 +37,7 @@ typedef struct VIDEO_STATS {
     float receivedFps;
     float decodedFps;
     float avgDecoderLatency;
+    int videoQueueDepth;
     uint32_t rtt, rttVariance;
     uint64_t receivedBytes;
     uint32_t currentBitrateKbps;
@@ -48,6 +49,7 @@ typedef struct VIDEO_INFO {
     int height;
     bool has_host_latency;
     bool has_decoder_latency;
+    bool has_queue_depth;
 } VIDEO_INFO;
 
 typedef struct AUDIO_INFO {
@@ -65,6 +67,7 @@ typedef struct session_config_t {
     uint8_t stick_deadzone;
     bool auto_adjust_bitrate;
     int abr_mode;
+    bool low_latency_mode;
 } session_config_t;
 
 extern int streaming_errno;

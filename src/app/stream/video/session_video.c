@@ -344,6 +344,13 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
     } else {
         dst->avgDecoderLatency = 0;
     }
+    int queueDepth = 0;
+    if (SS4S_PlayerGetVideoQueueDepth(player, &queueDepth)) {
+        dst->videoQueueDepth = queueDepth;
+        vdec_stream_info.has_queue_depth = true;
+    } else {
+        dst->videoQueueDepth = 0;
+    }
     vdec_stats_write_end();
     app_bus_post(session->app, (bus_actionfunc) streaming_refresh_stats, NULL);
 }

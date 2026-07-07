@@ -159,6 +159,23 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(hevc_checkbox, idr_refresh_hevc_cb, LV_EVENT_VALUE_CHANGED, controller);
     idr_refresh_state_update(controller);
 
+    pref_header(view, locstr("Latency & Bitrate"));
+
+    pref_checkbox(view, locstr("Low latency mode (drop late frames)"), &app_configuration->low_latency_mode, false);
+    pref_desc_label(view,
+                    locstr("When the TV decoder falls behind (e.g. 4K 120FPS HDR), flush the queued frames and "
+                           "request a keyframe to catch up. Reduces display delay at the cost of brief image "
+                           "refreshes when the decoder is saturated."),
+                    false);
+
+    pref_checkbox(view, locstr("Send full bitrate to host (Sunshine)"),
+                  &app_configuration->full_bitrate, false);
+    pref_desc_label(view,
+                    locstr("Use the entire configured bitrate for video instead of reserving 20% for error "
+                           "correction. Improves image quality on Sunshine/Apollo hosts; ignored on GeForce "
+                           "Experience hosts."),
+                    false);
+
     pref_header(view, locstr("Color"));
     pref_checkbox(view, locstr("Full range YUV (SDR only)"), &app_configuration->force_full_color_range, false);
     pref_desc_label(view,

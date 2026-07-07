@@ -38,6 +38,9 @@ typedef struct VIDEO_STATS {
     float decodedFps;
     float avgDecoderLatency;
     int videoQueueDepth;
+    /** Average time the platform decoder takes to accept one frame, in ms. Above the frame
+     * interval means the decoder is applying backpressure (can't keep up with the stream). */
+    float avgFeedCallMs;
     uint32_t rtt, rttVariance;
     uint64_t receivedBytes;
     uint32_t currentBitrateKbps;
@@ -50,6 +53,7 @@ typedef struct VIDEO_INFO {
     bool has_host_latency;
     bool has_decoder_latency;
     bool has_queue_depth;
+    bool has_feed_time;
 } VIDEO_INFO;
 
 typedef struct AUDIO_INFO {

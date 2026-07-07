@@ -351,6 +351,13 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
     } else {
         dst->videoQueueDepth = 0;
     }
+    int feedTimeUs = 0;
+    if (SS4S_PlayerGetVideoFeedTime(player, &feedTimeUs)) {
+        dst->avgFeedCallMs = (float) feedTimeUs / 1000.0f;
+        vdec_stream_info.has_feed_time = true;
+    } else {
+        dst->avgFeedCallMs = 0;
+    }
     vdec_stats_write_end();
     app_bus_post(session->app, (bus_actionfunc) streaming_refresh_stats, NULL);
 }

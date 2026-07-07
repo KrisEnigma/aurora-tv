@@ -223,6 +223,11 @@ bool streaming_refresh_stats() {
                                 "%sQ %d", first ? "" : " \xb7 ", dst->videoQueueDepth);
                 first = false;
             }
+            if (info->has_feed_time && len > 0 && (size_t) len < sizeof(stats_line)) {
+                len += snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
+                                "%sF %.2fms", first ? "" : " \xb7 ", dst->avgFeedCallMs);
+                first = false;
+            }
             if (have_encode && len > 0 && (size_t) len < sizeof(stats_line)) {
                 snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
                          "%sEn %.1fms", first ? "" : " \xb7 ", hostMs);
@@ -273,7 +278,12 @@ bool streaming_refresh_stats() {
                 lv_label_set_text_fmt(controller->stats_items.vdec_latency, "not available");
             }
             if (vdec_stream_info.has_queue_depth) {
-                lv_label_set_text_fmt(controller->stats_items.queue_depth, "%d frames", dst->videoQueueDepth);
+                if (vdec_stream_info.has_feed_time) {
+                    lv_label_set_text_fmt(controller->stats_items.queue_depth, "%d frames, feed %.2f ms",
+                                          dst->videoQueueDepth, dst->avgFeedCallMs);
+                } else {
+                    lv_label_set_text_fmt(controller->stats_items.queue_depth, "%d frames", dst->videoQueueDepth);
+                }
             } else {
                 lv_label_set_text_fmt(controller->stats_items.queue_depth, "not available");
             }

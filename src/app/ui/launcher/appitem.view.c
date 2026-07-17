@@ -82,8 +82,6 @@ void appitem_style_init(appitem_styles_t *style) {
     lv_style_set_outline_width(&style->cover, LV_DPX(4));
     lv_style_set_outline_opa(&style->cover, LV_OPA_TRANSP);
     lv_style_set_outline_pad(&style->cover, LV_DPX(3));
-    lv_style_set_shadow_width(&style->cover, LV_DPX(24));
-    lv_style_set_shadow_opa(&style->cover, LV_OPA_50);
 
     lv_style_init(&style->btn);
     lv_style_set_width(&style->btn, LV_DPX(44));

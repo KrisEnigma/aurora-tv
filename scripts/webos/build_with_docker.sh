@@ -28,6 +28,8 @@ docker run --rm \
     -e DOCKER_SKIP_SUBMODULES=1 \
     -v "${PROJECT_ROOT}:/build" \
     -v "${INNER_SCRIPT}:/docker_build.sh" \
+    -v aurora-webos-sdk-cache:/tmp/arm-webos-linux-gnueabi_sdk-buildroot \
+    -v aurora-webos-build-cache:/tmp/aurora-webos-build \
     -w /build \
     ubuntu:22.04 \
     bash -c "sed 's/\r\$//' /docker_build.sh | bash"

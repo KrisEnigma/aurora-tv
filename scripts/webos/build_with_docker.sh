@@ -19,13 +19,26 @@ if ! docker ps >/dev/null 2>&1; then
 fi
 
 echo "Using Docker to build in Ubuntu environment..."
+if [ -n "${WEBOS_APPINFO_ID:-}" ]; then
+    echo "  WEBOS_APPINFO_ID = ${WEBOS_APPINFO_ID}"
+fi
+if [ -n "${WEBOS_APPINFO_TITLE:-}" ]; then
+    echo "  WEBOS_APPINFO_TITLE = ${WEBOS_APPINFO_TITLE}"
+fi
 echo ""
+
+DOCKER_ENV_ARGS=(-e CI=1 -e DOCKER_SKIP_SUBMODULES=1)
+if [ -n "${WEBOS_APPINFO_ID:-}" ]; then
+    DOCKER_ENV_ARGS+=(-e "WEBOS_APPINFO_ID=${WEBOS_APPINFO_ID}")
+fi
+if [ -n "${WEBOS_APPINFO_TITLE:-}" ]; then
+    DOCKER_ENV_ARGS+=(-e "WEBOS_APPINFO_TITLE=${WEBOS_APPINFO_TITLE}")
+fi
 
 docker run --rm \
     --platform linux/amd64 \
     --dns 8.8.8.8 --dns 8.8.4.4 --dns 1.1.1.1 \
-    -e CI=1 \
-    -e DOCKER_SKIP_SUBMODULES=1 \
+    "${DOCKER_ENV_ARGS[@]}" \
     -v "${PROJECT_ROOT}:/build" \
     -v "${INNER_SCRIPT}:/docker_build.sh" \
     -v aurora-webos-sdk-cache:/tmp/arm-webos-linux-gnueabi_sdk-buildroot \

@@ -64,7 +64,14 @@ if [ "${DOCKER_CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf "${CMAKE_BINARY_DIR}"
 fi
 export CI=1
-sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release
+EXTRA_CMAKE_ARGS=()
+if [ -n "${WEBOS_APPINFO_ID:-}" ]; then
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_ID=${WEBOS_APPINFO_ID}")
+fi
+if [ -n "${WEBOS_APPINFO_TITLE:-}" ]; then
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_TITLE=${WEBOS_APPINFO_TITLE}")
+fi
+sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release "${EXTRA_CMAKE_ARGS[@]}"
 
 mkdir -p dist
 find "${CMAKE_BINARY_DIR}" -maxdepth 3 -name '*.ipk' -exec cp -f {} dist/ \;

@@ -68,16 +68,14 @@ lv_obj_t *appitem_view(apps_fragment_t *controller, lv_obj_t *parent) {
 void appitem_style_init(appitem_styles_t *style) {
     lv_style_init(&style->cover);
     lv_style_set_pad_all(&style->cover, 0);
-    /* Subtle rounding + shadow-only, no border, matching the reference LG webOS
-     * Moonlight client: unselected tiles are flush box art with a soft shadow,
-     * not an outlined card. Selection is indicated by the outline below. */
+    /* Subtle rounding, no border, no shadow: the theme is OLED-first (near-black
+     * background), where a drop shadow has nothing dark enough to blend into and
+     * reads as a hard-edged rectangle around the corner radius instead of a soft
+     * falloff. Selection is indicated by the outline below. */
     lv_style_set_radius(&style->cover, LV_DPX(6));
     lv_style_set_clip_corner(&style->cover, true);
     lv_style_set_border_width(&style->cover, 0);
-    lv_style_set_shadow_opa(&style->cover, LV_OPA_40);
-    lv_style_set_shadow_width(&style->cover, LV_DPX(16));
-    lv_style_set_shadow_ofs_y(&style->cover, LV_DPX(6));
-    lv_style_set_shadow_color(&style->cover, ml_color_hex(ML_COLOR_BG));
+    lv_style_set_shadow_opa(&style->cover, LV_OPA_TRANSP);
     lv_style_set_outline_color(&style->cover, ml_color_hex(ML_COLOR_PRIMARY));
     lv_style_set_outline_width(&style->cover, LV_DPX(4));
     lv_style_set_outline_opa(&style->cover, LV_OPA_TRANSP);
